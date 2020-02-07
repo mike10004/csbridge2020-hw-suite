@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Build file example; see README.md  -->
 <project name="hwsuite" default="build" basedir=".">
     <description>Homework Suite Python Programs</description>
     <include file="lib-python-local-install.xml"/>
