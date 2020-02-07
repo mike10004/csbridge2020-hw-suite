@@ -1,22 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Build file example; see README.md  -->
-<project name="my_python_project" default="build" basedir=".">
+<project name="hwsuite" default="build" basedir=".">
     <description>This project uses the Ant build helpers to install Python programs for a user.</description>
     <include file="lib-python-local-install.xml"/>
-    <property name="install.symlink.prefix" value="hw"/>
-
     <target name="init">
     </target>
 
     <target name="compile" depends="init">
-        <generate-executable module="foo.bar">runbar</generate-executable>
+        <generate-executable module="hwsuite.build">build</generate-executable>
     </target>
 
     <target name="build" depends="python-local-install.unittest, compile" description="build the package">
     </target>
 
-    <target name="install" depends="python-local-install.install-deps,build" description="install executables in user $PATH">
-      <install-script>runbar</install-script>
+    <target name="install" depends="build" description="install executables in user $PATH">
+        <install-script>build</install-script>
     </target>
 
     <target name="clean" depends="python-local-install.clean">

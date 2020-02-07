@@ -4,14 +4,15 @@
     <dirname property="project.dir" file="${ant.file}"/>
     <property name="bin.dir" location="${project.dir}/bin"/>
     <property name="launchers.dir" location="${project.dir}/launchers"/>
+    <property name="launchers.environment" value="export HWSUITE_INSTALLED=1${line.separator}"/>
     <property name="src.dir" value="${project.dir}"/>
     <property name="install.dir" value="${user.home}/.local/bin"/>
-    <property name="install.overwrite" value="false"/>
+    <property name="install.overwrite" value="true"/>
     <property name="python.executable" value="/usr/bin/python3"/>
     <property name="install-log.dir" location="${project.dir}"/>
     <property name="install-log.filename" value=".installed"/>
     <property name="install-log.pathname" location="${install-log.dir}/${install-log.filename}"/>
-    <property name="install.symlink.prefix" value=""/>
+    <property name="install.symlink.prefix" value="hw"/>
 
     <macrodef name="check-main" >
         <text name="progname" optional="false"/>
@@ -50,6 +51,7 @@
             <mkdir dir="${bin.dir}"/>
             <echo file="${bin.dir}/@{progname}">#!/bin/bash${line.separator}</echo>
             <echo file="${bin.dir}/@{progname}" append="true">export PYTHONPATH=${src.dir}${line.separator}</echo>
+            <echo file="${bin.dir}/@{progname}" append="true">${launchers.environment}${line.separator}</echo>
             <echo file="${bin.dir}/@{progname}" append="true">exec ${launcher.path} &quot;$@&quot;${line.separator}</echo>
             <chmod perm="0700" file="${bin.dir}/@{progname}"/>
         </sequential>
