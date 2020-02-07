@@ -11,6 +11,14 @@ cmake_minimum_required(VERSION 3.7)
 project({project_name})
 """
 
+_GITIGNORE_TEXT = """\
+cmake-build*/
+/stage/
+__pycache__/
+test-cases/
+*.pyc
+"""
+
 
 class AlreadyInitializedException(Exception):
     pass
@@ -32,7 +40,8 @@ def do_init(proj_dir, project_name, unsafe=False, cfg_filename=hwsuite.CFG_FILEN
     cmakelists_text = _ROOT_CMAKELISTS_TXT_TEMPLATE.format(project_name=project_name)
     with open(cmakelists_pathname, 'w') as ofile:
         ofile.write(cmakelists_text)
-
+    with open(os.path.join(proj_dir, '.gitignore'), 'a') as ofile:
+        print(_GITIGNORE_TEXT, file=ofile)
 
 def main():
     parser = argparse.ArgumentParser()
