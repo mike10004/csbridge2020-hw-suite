@@ -10,6 +10,7 @@ from argparse import ArgumentParser
 from typing import NamedTuple, List, Dict, Any, Optional
 import logging
 
+import hwsuite
 
 _log = logging.getLogger(__name__)
 _DEFAULT_CASE_ID_PRECISION = 2
@@ -146,8 +147,8 @@ def produce_from_defs(defs_file: str, dest_dirname: str = 'test-cases') -> Param
     return param_source
 
 
-def produce_files(subdirs: Optional[List[str]], definitions_filename: str, dest_dirname: str):
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
+def produce_files(subdirs: Optional[List[str]], definitions_filename: str, dest_dirname: str, proj_dir: str=None):
+    proj_dir = os.path.abspath(proj_dir or hwsuite.find_proj_root())
     if not subdirs:
         defs_files = find_all_definitions_files(proj_dir, definitions_filename)
     else:
@@ -175,8 +176,8 @@ def main():
     parser.add_argument("subdirs", nargs='*', metavar="DIR", help="subdirectory containing 'test-cases.json` file")
     parser.add_argument("--definitions-filename", metavar="BASENAME", default=_DEFAULT_DEFINITIONS_FILENAME, help="test cases definitions filename to search for, if not 'test-cases.json'")
     parser.add_argument("--dest-dirname", default="test-cases", metavar="BASENAME", help="destination directory name (relative to definitions file location)")
-    parser.add_argument("-l", "--log-level", default="INFO", metavar="LEVEL", choices=('DEBUG', 'WARN', 'ERROR', 'INFO'))
+    hwsuite.add_logging_options(parser)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.__dict__[args.log_level.upper()])
+    hwsuite.configure_logging(args)
     nsuccesses = produce_files(args.subdirs, args.definitions_filename, args.dest_dirname)
     return 0 if nsuccesses > 0 else 2
