@@ -8,6 +8,7 @@
 
     <target name="compile" depends="init">
         <generate-executable module="hwsuite.build">build</generate-executable>
+        <generate-executable module="hwsuite.clean">clean</generate-executable>
     </target>
 
     <target name="build" depends="python-local-install.unittest, compile" description="build the package">
@@ -15,6 +16,7 @@
 
     <target name="install" depends="build" description="install executables in user $PATH">
         <install-script>build</install-script>
+        <install-script>clean</install-script>
     </target>
 
     <target name="clean" depends="python-local-install.clean">
