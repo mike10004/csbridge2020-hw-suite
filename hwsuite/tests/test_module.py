@@ -18,13 +18,13 @@ class ModuleMethodsTest(TestCase):
 
     def test_find_proj_root_standard(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            hwsuite.init.do_init(tempdir, 'unittest-example')
+            hwsuite.init.do_init(tempdir, 'unittest-example', safety_mode='abort')
             actual = hwsuite.find_proj_root(cwd=tempdir)
             self.assertEqual(tempdir, actual)
 
     def test_find_proj_root_child(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            hwsuite.init.do_init(tempdir, 'unittest-example')
+            hwsuite.init.do_init(tempdir, 'unittest-example', safety_mode='abort')
             subdir = os.path.join(tempdir, "q1")
             os.makedirs(subdir)
             actual = hwsuite.find_proj_root(cwd=subdir)

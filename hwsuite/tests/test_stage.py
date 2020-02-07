@@ -5,8 +5,6 @@ import sys
 import tempfile
 from typing import List
 from unittest import TestCase
-import hwsuite
-import hwsuite.init
 from pathlib import Path
 from hwsuite import stage
 import logging
