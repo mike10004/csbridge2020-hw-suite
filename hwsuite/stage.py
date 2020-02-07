@@ -17,7 +17,7 @@ import hwsuite
 _log = logging.getLogger(__name__)
 
 
-class PrefixNotDefinedException(Exception):
+class PrefixNotDefinedException(hwsuite.MessageworthyException):
     pass
 
 
@@ -98,8 +98,13 @@ def main():
     parser.add_argument("--project-root", metavar="DIR")
     parser.add_argument("--stage-dir", metavar="DIR", help="destination directory")
     args = parser.parse_args()
-    proj_root = os.path.abspath(args.project_root or hwsuite.find_proj_root())
-    num_staged = stage(proj_root, args.prefix, args.stage_dir)
+    try:
+        proj_root = os.path.abspath(args.project_root or hwsuite.find_proj_root())
+        num_staged = stage(proj_root, args.prefix, args.stage_dir)
+    except hwsuite.MessageworthyException as ex:
+        print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
+        return 1
     if num_staged == 0:
+        # warning message already printed by logger
         return 1
     return 0

@@ -179,5 +179,9 @@ def main():
     hwsuite.add_logging_options(parser)
     args = parser.parse_args()
     hwsuite.configure_logging(args)
-    nsuccesses = produce_files(args.subdirs, args.definitions_filename, args.dest_dirname)
-    return 0 if nsuccesses > 0 else 2
+    try:
+        nsuccesses = produce_files(args.subdirs, args.definitions_filename, args.dest_dirname)
+        return 0 if nsuccesses > 0 else 2
+    except hwsuite.MessageworthyException as ex:
+        print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
+        return 1

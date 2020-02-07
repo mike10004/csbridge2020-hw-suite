@@ -51,7 +51,11 @@ def main():
     parser.add_argument("source_root", nargs='?')
     args = parser.parse_args()
     hwsuite.configure_logging(args)
-    proj_root = hwsuite.find_proj_root()
-    source_dir = args.source_root or proj_root
-    build(source_dir)
-    return 0
+    try:
+        proj_root = hwsuite.find_proj_root()
+        source_dir = args.source_root or proj_root
+        build(source_dir)
+        return 0
+    except hwsuite.MessageworthyException as ex:
+        print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
+        return 1

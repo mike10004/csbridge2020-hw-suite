@@ -9,6 +9,7 @@ import re
 import shutil
 import logging
 import os.path
+import sys
 from argparse import ArgumentParser
 import hwsuite
 
@@ -125,5 +126,8 @@ def main():
     parser.add_argument("--project-dir", metavar="DIR", help="project directory; default is working directory")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
-    return _main(args)
-
+    try:
+        return _main(args)
+    except hwsuite.MessageworthyException as ex:
+        print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
+        return 2
