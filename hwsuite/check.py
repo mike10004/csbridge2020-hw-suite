@@ -20,14 +20,11 @@ from hwsuite import testcases
 from subprocess import PIPE, DEVNULL
 from argparse import ArgumentParser
 from typing import List, Tuple, Optional, NamedTuple
-
+from hwsuite import _cmd
+import hwsuite.build
 
 _log = logging.getLogger(__name__)
 _DEFAULT_PAUSE_DURATION_SECONDS = 0.5
-
-
-class CommandException(Exception):
-    pass
 
 
 def read_file_text(pathname: str, ignore_failure=False) -> str:
@@ -42,13 +39,6 @@ def read_file_text(pathname: str, ignore_failure=False) -> str:
 def read_file_lines(pathname: str) -> List[str]:
     with open(pathname, 'r') as ifile:
         return [line for line in ifile]
-
-
-def _cmd(cmd_list, err_msg="Command Line Error", allow_nonzero_exit=False) -> str:
-    proc = subprocess.run(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if allow_nonzero_exit or proc.returncode != 0:
-        raise CommandException("exit code {}; {}\n{}".format(proc.returncode, err_msg, proc.stderr.decode('utf8')))
-    return proc.stdout.decode('utf8')
 
 
 def detect_test_case_files(q_dir: str) -> List[Tuple[Optional[str], str]]:
@@ -259,10 +249,8 @@ def main():
     proj_dir = os.path.dirname(this_file)  # also might want to handle the case where script piped in on stdin
     _log.debug("this project dir is %s, derived from %s", proj_dir, os.path.basename(this_file))
     assert proj_dir and os.path.isdir(proj_dir), "failed to detect project directory"
-    build_script = os.path.join(proj_dir, 'build.sh')
-    _log.debug("building executables by running %s", build_script)
-    _cmd(['bash', build_script], err_msg="build error")
-    _log.debug("done building executables")
+    _log.debug("building executables by running build in %s", proj_dir)
+    hwsuite.build.build(proj_dir)
     main_cpps = []
     if args.subdirs:
         _log.debug("limiting tests to subdirectories: %s", args.subdirs)
