@@ -48,7 +48,7 @@ def build(proj_root, build_dir=None, builder=None, build_type='Debug'):
 def main():
     parser = ArgumentParser()
     hwsuite.add_logging_options(parser)
-    parser.add_argument("source_root", nargs='*')
+    parser.add_argument("source_root", nargs='?')
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     proj_root = hwsuite.find_proj_root()

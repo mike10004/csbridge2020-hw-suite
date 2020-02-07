@@ -28,7 +28,7 @@ def clean(proj_root, cmake_dir_pattern='cmake-build*', stage_dir_basename='stage
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("project_root", nargs='*')
+    parser.add_argument("project_root", nargs='?')
     args = parser.parse_args()
     proj_root = args.project_root or hwsuite.find_proj_root()
     clean(proj_root)

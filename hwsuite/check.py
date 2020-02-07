@@ -5,7 +5,7 @@
     
     Your system must have `screen` installed.
 """
-
+import argparse
 import difflib
 import fnmatch
 import sys
@@ -231,21 +231,7 @@ def check_cpp(cpp_file: str, concurrency_level: int, pause_duration: float, max_
     report(failures, report_type)
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument("subdirs", nargs='*', help="subdirectories containing executables to test; if none specified, run all")
-    hwsuite.add_logging_options(parser)
-    parser.add_argument("-p", "--pause", type=float, metavar="DURATION", help="pause duration (seconds)", default=_DEFAULT_PAUSE_DURATION_SECONDS)
-    parser.add_argument("-m", "--max-cases", type=int, default=None, metavar="N", help="run at most N test cases per cpp")
-    parser.add_argument("-j", "-t", "--threads", type=int, default=4, metavar="N", help="concurrency level for test cases")
-    parser.add_argument("--log-input", help="log feeding of input lines at DEBUG level")
-    parser.add_argument("--filter", metavar="PATTERN", help="match test case input filenames against PATTERN")
-    parser.add_argument("--report", metavar="ACTION", choices=('diff', 'full', 'repr', 'none'), default='diff', help="what to print on test case failure")
-    parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
-    parser.add_argument("--test-cases", metavar="MODE", choices=('auto', 'require', 'existing'), help="test case generation mode; 'auto' means attempt to re-generate")
-    parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
-    args = parser.parse_args()
-    hwsuite.configure_logging(args)
+def _main(args: argparse.Namespace):
     proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
     _log.debug("this project dir is %s (specified %s)", proj_dir, args.project_dir)
     assert proj_dir and os.path.isdir(proj_dir), "failed to detect project directory"
@@ -274,3 +260,23 @@ def main():
                 testcases.produce_from_defs(defs_file)
         check_cpp(cpp_file, args.threads, args.pause, args.max_cases, args.log_input, args.filter, args.report, args.stuff)
     return 0
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument("subdirs", nargs='*', help="subdirectories containing executables to test; if none specified, run all")
+    hwsuite.add_logging_options(parser)
+    parser.add_argument("-p", "--pause", type=float, metavar="DURATION", help="pause duration (seconds)", default=_DEFAULT_PAUSE_DURATION_SECONDS)
+    parser.add_argument("-m", "--max-cases", type=int, default=None, metavar="N", help="run at most N test cases per cpp")
+    parser.add_argument("-j", "-t", "--threads", type=int, default=4, metavar="N", help="concurrency level for test cases")
+    parser.add_argument("--log-input", help="log feeding of input lines at DEBUG level")
+    parser.add_argument("--filter", metavar="PATTERN", help="match test case input filenames against PATTERN")
+    parser.add_argument("--report", metavar="ACTION", choices=('diff', 'full', 'repr', 'none'), default='diff', help="what to print on test case failure")
+    parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
+    parser.add_argument("--test-cases", metavar="MODE", choices=('auto', 'require', 'existing'), help="test case generation mode; 'auto' means attempt to re-generate")
+    parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
+    args = parser.parse_args()
+    hwsuite.configure_logging(args)
+    return _main(args)
+
+

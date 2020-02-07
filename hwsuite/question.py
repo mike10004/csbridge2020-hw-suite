@@ -3,6 +3,7 @@
 """
     question.py generates a new question subdirectory
 """
+import argparse
 import json
 import re
 import shutil
@@ -92,7 +93,7 @@ def populate(q_dir):
             ["jennifer"],
         ]
     }
-    _write_text(json.dumps(test_cases), os.path.join(q_dir, 'test-cases.json'))
+    _write_text(json.dumps(test_cases, indent=2), os.path.join(q_dir, 'test-cases.json'))
     _log.debug("populated directory %s", q_dir)
 
 
@@ -103,15 +104,7 @@ def config_root_proj(proj_dir, q_name):
     _log.debug("appended subdirectory line to %s", root_cmakelists_file)
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument("name", nargs='?', help="name of subdirectory, e.g. 'q2'")
-    hwsuite.add_logging_options(parser)
-    parser.add_argument("--mode", default='safe', choices=('safe', 'overwrite', 'replace'))
-    parser.add_argument("--project-dir", metavar="DIR", help="project directory; default is working directory")
-    args = parser.parse_args()
-    hwsuite.configure_logging(args)
-    logging.basicConfig(level=logging.__dict__[args.log_level])
+def _main(args: argparse.Namespace) -> int:
     proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
     q_name = args.name if args.name is not None else detect_next_qname(proj_dir)
     if os.path.isabs(q_name):
@@ -123,3 +116,14 @@ def main():
     populate(q_dir)
     config_root_proj(proj_dir, q_name)
     return 0
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument("name", nargs='?', help="name of subdirectory, e.g. 'q2'")
+    hwsuite.add_logging_options(parser)
+    parser.add_argument("--mode", default='safe', choices=('safe', 'overwrite', 'replace'))
+    parser.add_argument("--project-dir", metavar="DIR", help="project directory; default is working directory")
+    args = parser.parse_args()
+    hwsuite.configure_logging(args)
+    return _main(args)
+

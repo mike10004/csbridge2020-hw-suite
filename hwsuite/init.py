@@ -28,7 +28,7 @@ def touch(pathname):
     Path(pathname).touch()
 
 
-def do_init(proj_dir, project_name, unsafe=False, cfg_filename=hwsuite.CFG_FILENAME):
+def do_init(proj_dir, project_name, unsafe=False, cfg_filename=hwsuite.CFG_FILENAME) -> int:
     cfg_pathname = os.path.join(proj_dir, cfg_filename)
     if not unsafe and os.path.exists(cfg_pathname):
         raise AlreadyInitializedException(f"already exists: {cfg_pathname}")
@@ -42,6 +42,8 @@ def do_init(proj_dir, project_name, unsafe=False, cfg_filename=hwsuite.CFG_FILEN
         ofile.write(cmakelists_text)
     with open(os.path.join(proj_dir, '.gitignore'), 'a') as ofile:
         print(_GITIGNORE_TEXT, file=ofile)
+    return 0
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -50,5 +52,4 @@ def main():
     parser.add_argument("--name", default='hw', help="set CMake project name")
     args = parser.parse_args()
     proj_dir = args.project_dir or os.getcwd()
-    do_init(proj_dir, args.name, unsafe=args.unsafe)
-    return 0
+    return do_init(proj_dir, args.name, unsafe=args.unsafe)
