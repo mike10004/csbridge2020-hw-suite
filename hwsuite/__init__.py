@@ -48,9 +48,9 @@ def find_proj_root(cwd=None, cfg_filename=CFG_FILENAME):
     raise WhereamiException("this directory is not an ancestor of a hw project")
 
 
-def load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME):
+def load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
     if cfg_pathname is None:
-        proj_root = find_proj_root()
+        proj_root = proj_root or find_proj_root()
         cfg_pathname = os.path.join(proj_root, default_cfg_filename)
     with open(cfg_pathname, 'r') as ifile:
         ifile_str = ifile.read()
@@ -59,13 +59,20 @@ def load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME):
     return json.loads(ifile_str)
 
 
-def get_config(cfg_pathname=None):
+def get_config(cfg_pathname=None, proj_root=None):
     try:
         return _CACHE[_KEY_CFG]
     except KeyError:
-        config = load_config(cfg_pathname)
+        config = load_config(cfg_pathname, proj_root=proj_root)
         _CACHE[_KEY_CFG] = config
         return config
+
+
+def store_config(cfg=None, cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
+    cfg = cfg or get_config(cfg_pathname, proj_root=proj_root)
+    cfg_pathname = cfg_pathname or os.path.join(find_proj_root(), default_cfg_filename)
+    with open(cfg_pathname, 'w') as ofile:
+        json.dump(cfg, ofile, indent=2)
 
 
 def configure_logging(args: argparse.Namespace):

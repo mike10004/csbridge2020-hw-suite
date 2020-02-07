@@ -12,6 +12,7 @@
         <generate-executable module="hwsuite.question">question</generate-executable>
         <generate-executable module="hwsuite.testcases">testcases</generate-executable>
         <generate-executable module="hwsuite.check">check</generate-executable>
+        <generate-executable module="hwsuite.stage">stage</generate-executable>
     </target>
 
     <target name="build" depends="compile" description="build the package">
@@ -26,6 +27,7 @@
         <install-script>init</install-script>
         <install-script>question</install-script>
         <install-script>check</install-script>
+        <install-script>stage</install-script>
     </target>
 
     <target name="clean" depends="python-local-install.clean">
