@@ -9,6 +9,7 @@ import shutil
 import logging
 import os.path
 from argparse import ArgumentParser
+import hwsuite
 
 
 _log = logging.getLogger(__name__)
@@ -105,12 +106,13 @@ def config_root_proj(proj_dir, q_name):
 def main():
     parser = ArgumentParser()
     parser.add_argument("name", nargs='?', help="name of subdirectory, e.g. 'q2'")
-    parser.add_argument("-l", "--log-level", metavar="LEVEL", choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO', help="set log level")
+    hwsuite.add_logging_options(parser)
     parser.add_argument("--mode", default='safe', choices=('safe', 'overwrite', 'replace'))
-    parser.add_argument("--root", metavar="DIR", help="project directory; default is working directory")
+    parser.add_argument("--project-dir", metavar="DIR", help="project directory; default is working directory")
     args = parser.parse_args()
+    hwsuite.configure_logging(args)
     logging.basicConfig(level=logging.__dict__[args.log_level])
-    proj_dir = os.path.abspath(args.root or os.getcwd())
+    proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
     q_name = args.name if args.name is not None else detect_next_qname(proj_dir)
     if os.path.isabs(q_name):
         raise ValueError("'name' should be basename or relative path, not an absolute path")
