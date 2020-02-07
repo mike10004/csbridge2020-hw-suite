@@ -14,7 +14,10 @@
         <generate-executable module="hwsuite.check">check</generate-executable>
     </target>
 
-    <target name="build" depends="python-local-install.unittest, compile" description="build the package">
+    <target name="build" depends="compile" description="build the package">
+    </target>
+
+    <target name="test" depends="python-local-install.unittest, build" description="run unit tests">
     </target>
 
     <target name="install" depends="build" description="install executables in user $PATH">

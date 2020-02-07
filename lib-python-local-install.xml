@@ -70,6 +70,7 @@
             <arg value="-m"/>
             <arg value="unittest"/>
             <arg value="discover"/>
+            <arg value="hwsuite/tests"/>
         </exec>
     </target>
 
