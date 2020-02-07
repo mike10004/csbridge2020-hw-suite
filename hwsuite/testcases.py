@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# make_test_cases.py
+# testcases.py
 import json
 import math
 import os.path
