@@ -180,7 +180,3 @@ def main():
     logging.basicConfig(level=logging.__dict__[args.log_level.upper()])
     nsuccesses = produce_files(args.subdirs, args.definitions_filename, args.dest_dirname)
     return 0 if nsuccesses > 0 else 2
-
-
-if __name__ == '__main__':
-    exit(main())

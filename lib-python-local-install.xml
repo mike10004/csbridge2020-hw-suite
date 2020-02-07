@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="python-local-install" default="build" basedir=".">
+    <description>Ant build helpers file to include from your regular build.xml</description>
+    <dirname property="project.dir" file="${ant.file}"/>
+    <property name="bin.dir" location="${project.dir}/bin"/>
+    <property name="launchers.dir" location="${project.dir}/launchers"/>
+    <property name="src.dir" value="${project.dir}"/>
+    <property name="install.dir" value="${user.home}/.local/bin"/>
+    <property name="install.overwrite" value="false"/>
+    <property name="python.executable" value="/usr/bin/python3"/>
+    <property name="install-log.dir" location="${project.dir}"/>
+    <property name="install-log.filename" value=".installed"/>
+    <property name="install-log.pathname" location="${install-log.dir}/${install-log.filename}"/>
+    <property name="install.symlink.prefix" value=""/>
+
+    <macrodef name="check-main" >
+        <text name="progname" optional="false"/>
+        <attribute name="module" default="@{progname}"/>
+        <sequential>
+            <exec executable="python3" failonerror="true">
+                <env key="PYTHONPATH" value="${src.dir}"/>
+                <arg value="-c"/>
+                <arg value="from @{module} import main"/>
+            </exec>
+        </sequential>
+    </macrodef>
+
+    <macrodef name="generate-launcher">
+        <text name="progname" optional="false"/>
+        <attribute name="module" default="@{progname}"/>
+        <sequential>
+            <check-main module="@{module}">@{progname}</check-main>
+            <local name="launcher.path"/>
+            <mkdir dir="${launchers.dir}"/>
+            <property name="launcher.path" location="${launchers.dir}/@{progname}.py"/>
+            <echo file="${launcher.path}" append="false">#!/usr/bin/env python3 ${line.separator}</echo>
+            <echo file="${launcher.path}" append="true">from @{module} import main ${line.separator}</echo>
+            <echo file="${launcher.path}" append="true">if __name__ == &quot;__main__&quot;: exit(main()) ${line.separator}</echo>
+        </sequential>
+    </macrodef>
+
+    <macrodef name="generate-executable">
+        <text name="progname" optional="false"/>
+        <attribute name="module" default="@{progname}"/>
+        <sequential>
+            <generate-launcher module="@{module}">@{progname}</generate-launcher>
+            <chmod perm="0700" file="${launchers.dir}/@{progname}.py"/>
+            <local name="launcher.path"/>
+            <property name="launcher.path" location="${launchers.dir}/@{progname}.py"/>
+            <mkdir dir="${bin.dir}"/>
+            <echo file="${bin.dir}/@{progname}">#!/bin/bash${line.separator}</echo>
+            <echo file="${bin.dir}/@{progname}" append="true">export PYTHONPATH=${src.dir}${line.separator}</echo>
+            <echo file="${bin.dir}/@{progname}" append="true">exec ${launcher.path} &quot;$@&quot;${line.separator}</echo>
+            <chmod perm="0700" file="${bin.dir}/@{progname}"/>
+        </sequential>
+    </macrodef>
+
+    <macrodef name="install-script">
+        <text name="prog" trim="true" optional="false"/>
+        <sequential>
+            <symlink link="${install.dir}/${install.symlink.prefix}@{prog}" resource="${bin.dir}/@{prog}" overwrite="${install.overwrite}"/>
+            <echo file="${install-log.pathname}" append="true">${install.dir}/${install.symlink.prefix}@{prog}${line.separator}</echo>
+        </sequential>
+    </macrodef>
+
+    <target name="unittest" description="run tests">
+        <exec executable="${python.executable}" failonerror="true">
+            <arg value="-m"/>
+            <arg value="unittest"/>
+            <arg value="discover"/>
+        </exec>
+    </target>
+
+    <target name="clean" description="delete generated files">
+        <delete dir="${bin.dir}"/>
+        <delete dir="${launchers.dir}"/>
+    </target>
+
+    <target name="pre-install" description="Prepare for script installation">
+        <delete file="${install-log.pathname}" failonerror="false"/>
+    </target>
+
+    <target name="uninstall" description="Remove installed script symlinks">
+        <exec executable="xargs" input="${install-log.pathname}">
+            <arg value="--no-run-if-empty"/>
+            <arg value="--verbose"/>
+            <arg value="rm"/>
+            <arg value="-f"/>
+        </exec>
+    </target>
+</project>

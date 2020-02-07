@@ -16,7 +16,7 @@ import tempfile
 import os.path
 import subprocess
 import time
-import make_test_cases
+from hwsuite import make_test_cases
 from subprocess import PIPE, DEVNULL
 from argparse import ArgumentParser
 from typing import List, Tuple, Optional, NamedTuple
@@ -286,7 +286,3 @@ def main():
                 make_test_cases.produce_from_defs(defs_file)
         check_cpp(cpp_file, args.threads, args.pause, args.max_cases, args.log_input, args.filter, args.report, args.stuff)
     return 0
-
-
-if __name__ == '__main__':
-    exit(main())

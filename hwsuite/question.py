@@ -121,7 +121,3 @@ def main():
     populate(q_dir)
     config_root_proj(proj_dir, q_name)
     return 0
-
-
-if __name__ == '__main__':
-    exit(main())
