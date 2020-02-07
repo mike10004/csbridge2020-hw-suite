@@ -9,7 +9,7 @@ import logging
 
 
 _log = logging.getLogger(__name__)
-_CFG_FILENAME = ".hwconfig.json"
+CFG_FILENAME = ".hwconfig.json"
 _CACHE = {}
 _KEY_CFG = 'config'
 BUILD_DIR_BASENAME = 'cmake-build-debug'
@@ -37,7 +37,7 @@ def _cmd(cmd_list, err_msg="Command Line Error", allow_nonzero_exit=False) -> st
     return proc.stdout.decode('utf8')
 
 
-def find_proj_root(cwd=None, cfg_filename=_CFG_FILENAME):
+def find_proj_root(cwd=None, cfg_filename=CFG_FILENAME):
     cwd = os.path.abspath(cwd or os.getcwd())
     proj_root = cwd
     while not os.path.exists(os.path.join(proj_root, cfg_filename)):
@@ -48,7 +48,7 @@ def find_proj_root(cwd=None, cfg_filename=_CFG_FILENAME):
     raise WhereamiException("this directory is not an ancestor of a hw project")
 
 
-def load_config(cfg_pathname=None, default_cfg_filename=_CFG_FILENAME):
+def load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME):
     if cfg_pathname is None:
         proj_root = find_proj_root()
         cfg_pathname = os.path.join(proj_root, default_cfg_filename)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Build file example; see README.md  -->
 <project name="hwsuite" default="build" basedir=".">
-    <description>This project uses the Ant build helpers to install Python programs for a user.</description>
+    <description>Homework Suite Python Programs</description>
     <include file="lib-python-local-install.xml"/>
     <target name="init">
     </target>
@@ -9,6 +9,7 @@
     <target name="compile" depends="init">
         <generate-executable module="hwsuite.build">build</generate-executable>
         <generate-executable module="hwsuite.clean">clean</generate-executable>
+        <generate-executable module="hwsuite.init">init</generate-executable>
     </target>
 
     <target name="build" depends="python-local-install.unittest, compile" description="build the package">
@@ -17,6 +18,7 @@
     <target name="install" depends="build" description="install executables in user $PATH">
         <install-script>build</install-script>
         <install-script>clean</install-script>
+        <install-script>init</install-script>
     </target>
 
     <target name="clean" depends="python-local-install.clean">
