@@ -94,7 +94,11 @@ class TestCaseRunner(object):
             return TestCaseOutcome(passed, self.executable, input_file, expected_text, actual_text, message)
 
         def check(actual_text: str):
-            if actual_text != expected_text:
+            expected_text_ = expected_text
+            if "\t" in expected_text_:
+                _log.info("expected text contains tabs; we will accept spaces")
+                expected_text_ = expected_text_.replace("\t", "       ")
+            if actual_text != expected_text_:
                 return outcome(False, actual_text, "diff")
             return outcome(True, actual_text, "ok")
 
@@ -254,7 +258,7 @@ def _main(args: argparse.Namespace):
         _log.debug("searching %s for main.cpp files", proj_dir)
         for root, dirs, files in os.walk(proj_dir):
             for f in files:
-                if f == 'main.cpp':
+                if f == 'main.cpp' and not os.path.exists(os.path.join(root, '.nocheck')):
                     main_cpps.append(os.path.join(root, f))
     if not main_cpps:
         _log.error("no main.cpp files found")
