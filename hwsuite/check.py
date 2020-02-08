@@ -62,19 +62,48 @@ def _read_env(env_file) -> Dict[str, str]:
     return env
 
 
+def _derive_counterparts(expected_pathname, suppress_deprecation=False) -> Tuple[str, str]:
+    """Returns a tuple of basenames of the input and env file counterparts to the given expected output file pathname."""
+    basename = os.path.basename(expected_pathname)
+    def _derive(token, suffix):
+        if suffix:
+            identifier = basename[:len(basename) - len(token)]
+            return identifier + '-input.txt', identifier + '-env.txt'
+        else:
+            identifier = basename[len(token):]
+            return 'input' + identifier, 'env' + identifier
+    if basename.endswith("-expected.txt"):
+        return _derive("-expected.txt", True)
+    elif basename.endswith("-expected-output.txt", True):
+        return _derive("-expected-output.txt", True)
+    elif basename.startswith("expected-output"):
+        if not suppress_deprecation:
+            _log.warning("use of prefix 'expected-output' is deprecated: %s; use suffix -expected.txt instead", basename)
+        return _derive("expected-output", False)
+    raise ValueError("basename pattern not recognized; should be something like *-input.txt or *-expected.txt")
+
+
+def _create_test_case(expected_pathname: str) -> TestCase:
+    basename = os.path.basename(expected_pathname)
+    input_basename, env_basename = _derive_counterparts(basename)
+    parent = os.path.dirname(expected_pathname)
+    input_file = os.path.join(parent, input_basename)
+    env_file = os.path.join(parent, env_basename)
+    if not os.path.exists(input_file):
+        input_file = None
+    env = None
+    if os.path.exists(env_file):
+        env = frozenset(_read_env(env_file).items())
+    return TestCase(input_file, expected_pathname, env)
+
+
 def detect_test_case_files(q_dir: str) -> List[TestCase]:
     test_cases = []
     for root, dirs, files in os.walk(q_dir):
         for f in files:
-            if f.startswith('input'):
-                input_file = os.path.join(root, f)
-                suffix  = f[len('input'):]
-                expected_file = os.path.join(root, "expected-output" + suffix)
-                env_file = os.path.join(root, "env" + suffix)
-                env = None
-                if os.path.exists(env_file):
-                    env = frozenset(_read_env(env_file).items())
-                test_cases.append(TestCase(input_file, expected_file, env))
+            if f.startswith('expected-output') or f.endswith('-expected.txt') or f.endswith('-expected-output.txt'):
+                test_case = _create_test_case(os.path.join(root, f))
+                test_cases.append(test_case)
     if not test_cases:
         expected_file = os.path.join(q_dir, 'expected-output.txt')
         if os.path.isfile(expected_file):

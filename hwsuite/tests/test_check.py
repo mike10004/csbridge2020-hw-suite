@@ -93,3 +93,16 @@ baz=gaw""")
             outcome = t.run_test_case(None, expected_file, {'FOO': 'bar'})
         print(outcome)
         self.assertTrue(outcome.passed)
+
+    def test__derive_counterparts(self):
+        test_cases = [
+            ('/path/to/dir/expected-outputABC.txt', 'inputABC.txt', 'envABC.txt'),
+            ('/path/to/dir/expected-output-ABC.txt', 'input-ABC.txt', 'env-ABC.txt'),
+            ('/path/to/dir/expected-output01.txt', 'input01.txt', 'env01.txt'),
+            ('/path/to/dir/1-expected.txt', '1-input.txt', '1-env.txt'),
+            ('/path/to/dir/def-expected-output.txt', 'def-input.txt', 'def-env.txt'),
+        ]
+        for argpath, inbase, envbase in test_cases:
+            with self.subTest():
+                actual = check._derive_counterparts(argpath, True)
+                self.assertTupleEqual((inbase, envbase), actual)
