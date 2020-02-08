@@ -127,6 +127,7 @@ def _main(args: argparse.Namespace) -> int:
     os.makedirs(q_dir, exist_ok=(args.mode == 'overwrite'))
     questioner.populate(q_dir)
     questioner.config_root_proj(q_name)
+    _log.info("%s created", os.path.relpath(q_dir))
     return 0
 
 def main():

@@ -48,6 +48,7 @@ def do_init(proj_dir, project_name, safety_mode, cfg_filename=hwsuite.CFG_FILENA
     init_file(cmakelists_pathname, safety_mode, cmakelists_text)
     gitignore_pathname = os.path.join(proj_dir, '.gitignore')
     init_file(gitignore_pathname, safety_mode, _GITIGNORE_TEXT, write_mode='a')
+    _log.info("%s initialized", os.path.relpath(proj_dir))
     return 0
 
 
