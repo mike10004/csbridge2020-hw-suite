@@ -53,7 +53,7 @@ def find_proj_root(cwd=None, cfg_filename=CFG_FILENAME):
     raise WhereamiException("this directory is not an ancestor of a hw project; use hwinit to establish a project directory")
 
 
-def load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
+def _load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
     if cfg_pathname is None:
         proj_root = proj_root or find_proj_root()
         cfg_pathname = os.path.join(proj_root, default_cfg_filename)
@@ -68,7 +68,7 @@ def get_config(cfg_pathname=None, proj_root=None):
     try:
         return _CACHE[_KEY_CFG]
     except KeyError:
-        config = load_config(cfg_pathname, proj_root=proj_root)
+        config = _load_config(cfg_pathname, proj_root=proj_root)
         _CACHE[_KEY_CFG] = config
         return config
 

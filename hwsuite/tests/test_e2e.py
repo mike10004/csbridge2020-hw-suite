@@ -7,6 +7,7 @@ import hwsuite.init
 import hwsuite.question
 import hwsuite.check
 from argparse import Namespace
+import hwsuite.tests.test_check._create_namespace as _create_check_namespace
 
 
 class EndToEndTest(TestCase):
@@ -51,9 +52,7 @@ int main() {
                     [-4, 1, -3],
                 ]
             })
-            check_args = Namespace(subdirs=[], pause=hwsuite.check._DEFAULT_PAUSE_DURATION_SECONDS,
-                                   max_cases=None, threads=4, log_input=False, filter=None, report='none',
-                                   stuff='auto', test_cases='auto', project_dir=proj_dir)
+            check_args = _create_check_namespace(project_dir=proj_dir, subdirs=[], report='none')
             ecode = hwsuite.check._main(check_args)
             self.assertEqual(0, ecode, "check exit code")
             ecode = hwsuite.question._main(q_args)

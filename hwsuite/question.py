@@ -32,14 +32,14 @@ add_executable({q_name} main.cpp)
 """
 
 _MAINCPP_TEMPLATE = """\
+// {author}
 // Question {n}
 
 #include <iostream>
 
 using namespace std;
 
-int main()
-{{
+int main() {{
     cout << "{q_name} executed" << endl;
     return 0;
 }}
@@ -69,11 +69,15 @@ def _write_text(text: str, output_file: str):
         ofile.write(text)
 
 
-def _render(template: str, q_name: str, output_file: str):
+def _render(template: str, q_name: str, output_file: str, cfg=None):
+    cfg = cfg or hwsuite.get_config()
+    question_model = cfg.get('question_model', {})
     model = {
         'q_name': q_name,
-        'n': q_name[1:]
+        'n': q_name[1:],
+        'author': '<author>',
     }
+    model.update(question_model)
     _write_text(template.format(**model), output_file)
 
 

@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+import glob
+import os
+import sys
+import tempfile
+from typing import List
+from unittest import TestCase
+from pathlib import Path
+from hwsuite import check
+import logging
+import argparse
+
+
+_log = logging.getLogger(__name__)
+
+def _create_namespace(**kwargs) -> argparse.Namespace:
+    check_args = argparse.Namespace(subdirs=[], pause=check._DEFAULT_PAUSE_DURATION_SECONDS,
+                           max_cases=None, threads=4, log_input=False, filter=None, report='none',
+                           stuff='auto', test_cases='auto', project_dir=None, **kwargs)
+    return check_args
+
+
+class TestCaseRunnerTest(TestCase):
+
+    def test_run_test_case(self):
+        t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
+        with tempfile.TemporaryDirectory() as tempdir:
+            input_file = os.path.join(tempdir, 'input.txt')
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(input_file, 'w') as ofile:
+                ofile.write("1\n2\n")
+            with open(expected_file, 'w') as ofile:
+                ofile.write("1\nfoo 1\n2\nfoo 2\n")
+            outcome = t.run_test_case(input_file, expected_file)
+        print(outcome)
+        self.assertTrue(outcome.passed)
+
+    def test_run_test_case_no_input(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            any_file = os.path.join(tempdir, 'text.txt')
+            with open(any_file, 'w') as ofile:
+                ofile.write("This is my story\n")
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(expected_file, 'w') as ofile:
+                ofile.write("This is my story\n")
+            t = check.TestCaseRunner('cat', args=[any_file])
+            outcome = t.run_test_case(None, expected_file)
+        print(outcome)
+        self.assertTrue(outcome.passed)

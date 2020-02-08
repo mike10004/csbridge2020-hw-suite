@@ -25,7 +25,8 @@ import hwsuite.build
 
 _log = logging.getLogger(__name__)
 _DEFAULT_PAUSE_DURATION_SECONDS = 0.5
-
+_REPORT_CHOICES = ('diff', 'full', 'repr', 'none')
+_TEST_CASES_CHOICES = ('auto', 'require', 'existing')
 
 def read_file_text(pathname: str, ignore_failure=False) -> str:
     try:
@@ -69,11 +70,12 @@ class TestCaseOutcome(NamedTuple):
 
 class TestCaseRunner(object):
 
-    def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS, log_input=False, stuff_mode='auto'):
+    def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS, log_input=False, stuff_mode='auto', args=None):
         self.executable = executable
         self.pause_duration = pause_duration
         self.log_input = log_input
         self.stuff_mode = stuff_mode
+        self.args = args
 
     def _pause(self, duration=None):
         time.sleep(self.pause_duration if duration is None else duration)
@@ -83,7 +85,7 @@ class TestCaseRunner(object):
             line += "\n"
         return line
 
-    def run_test_case(self, input_file: Optional[str], expected_file: str):
+    def run_test_case(self, input_file: Optional[str], expected_file: str) -> TestCaseOutcome:
         tid = threading.current_thread().ident
         expected_text = read_file_text(expected_file)
 
@@ -96,13 +98,16 @@ class TestCaseRunner(object):
             return outcome(True, actual_text, "ok")
 
         if input_file is None:
-            output = _cmd([self.executable])
+            output = _cmd([self.executable] + (self.args or []))
             return check(output)
         
         input_lines = read_file_lines(input_file)
         case_id = str(uuid.uuid4())
         with tempfile.TemporaryDirectory() as tempdir:
-            exitcode = subprocess.call(['screen', '-L', '-S', case_id, '-d', '-m', self.executable], cwd=tempdir)
+            cmd = ['screen', '-L', '-S', case_id, '-d', '-m', '--', self.executable]
+            if self.args:
+                cmd += self.args
+            exitcode = subprocess.call(cmd, cwd=tempdir)
             if exitcode != 0:
                 return outcome(False, None, f"screen start failure {exitcode}")
             _log.debug("[%s] screen session %s started for %s; feeding lines from %s", tid, case_id, os.path.basename(self.executable), os.path.basename(input_file))
@@ -271,9 +276,9 @@ def main():
     parser.add_argument("-j", "-t", "--threads", type=int, default=4, metavar="N", help="concurrency level for test cases")
     parser.add_argument("--log-input", help="log feeding of input lines at DEBUG level")
     parser.add_argument("--filter", metavar="PATTERN", help="match test case input filenames against PATTERN")
-    parser.add_argument("--report", metavar="ACTION", choices=('diff', 'full', 'repr', 'none'), default='diff', help="what to print on test case failure")
+    parser.add_argument("--report", metavar="ACTION", choices=_REPORT_CHOICES, default='diff', help=f"what to print on test case failure; one of {_REPORT_CHOICES}; default is 'diff'")
     parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
-    parser.add_argument("--test-cases", metavar="MODE", choices=('auto', 'require', 'existing'), help="test case generation mode; 'auto' means attempt to re-generate")
+    parser.add_argument("--test-cases", metavar="MODE", choices=_TEST_CASES_CHOICES, help=f"test case generation mode; choices are {_TEST_CASES_CHOICES}; default 'auto' means attempt to re-generate")
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
