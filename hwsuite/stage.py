@@ -55,15 +55,20 @@ def _transfer(src_file, dst_file) -> str:
             ofile.write(line)
     return ''.join(good_lines)
 
+
 def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[str]=None, cfg: dict=None, default_stage_dir_basename='stage', no_clean=False) -> int:
     """Stages files and returns number of files staged."""
     proj_root = os.path.abspath(proj_root)
+    cfg = cfg or hwsuite.get_config(proj_root=proj_root)
+    assert prefix is None or prefix.strip(), "prefix must contain non-whitespace"
     if prefix is None:
-        cfg = cfg or hwsuite.get_config(proj_root=proj_root)
         prefix = cfg.get('stage_prefix', None)
         # TODO detect prefix from git user.email and root CMakeLists.txt project name
         if prefix is None:
             raise PrefixNotDefinedException("prefix must be specified if 'stage_prefix' is not defined in .hwconfig.json")
+    else:
+        cfg['stage_prefix'] = prefix
+        hwsuite.store_config(cfg)
     if not subdirs:
         if subdirs is None:
             subdirs = []
