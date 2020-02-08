@@ -7,7 +7,7 @@ import hwsuite.init
 import hwsuite.question
 import hwsuite.check
 from argparse import Namespace
-import hwsuite.tests.test_check._create_namespace as _create_check_namespace
+from hwsuite.tests.test_check import _create_namespace as _create_check_namespace
 
 
 class EndToEndTest(TestCase):

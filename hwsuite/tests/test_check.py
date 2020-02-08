@@ -16,7 +16,9 @@ _log = logging.getLogger(__name__)
 def _create_namespace(**kwargs) -> argparse.Namespace:
     check_args = argparse.Namespace(subdirs=[], pause=check._DEFAULT_PAUSE_DURATION_SECONDS,
                            max_cases=None, threads=4, log_input=False, filter=None, report='none',
-                           stuff='auto', test_cases='auto', project_dir=None, **kwargs)
+                           stuff='auto', test_cases='auto', project_dir=None)
+    for k, v in kwargs.items():
+        check_args.__setattr__(k, v)
     return check_args
 
 
