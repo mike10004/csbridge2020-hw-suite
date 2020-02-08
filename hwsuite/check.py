@@ -8,6 +8,7 @@
 import argparse
 import difflib
 import fnmatch
+import multiprocessing
 import re
 import sys
 import logging
@@ -362,6 +363,7 @@ def _main(args: argparse.Namespace):
     if not main_cpps:
         _log.error("no main.cpp files found")
         return 1
+    num_threads = args.threads or multiprocessing.cpu_count()
     for i, cpp_file in enumerate(sorted(main_cpps)):
         if args.test_cases != 'existing':
             defs_file = os.path.join(os.path.dirname(cpp_file), 'test-cases.json')
@@ -370,7 +372,7 @@ def _main(args: argparse.Namespace):
                     raise FileNotFoundError(defs_file)
             else:
                 testcases.produce_from_defs(defs_file)
-        check_cpp(cpp_file, args.threads, args.pause, args.max_cases, args.log_input, args.filter, args.report, args.stuff)
+        check_cpp(cpp_file, num_threads, args.pause, args.max_cases, args.log_input, args.filter, args.report, args.stuff)
     return 0
 
 
@@ -380,7 +382,7 @@ def main():
     hwsuite.add_logging_options(parser)
     parser.add_argument("-p", "--pause", type=float, metavar="DURATION", help="pause duration (seconds)", default=_DEFAULT_PAUSE_DURATION_SECONDS)
     parser.add_argument("-m", "--max-cases", type=int, default=None, metavar="N", help="run at most N test cases per cpp")
-    parser.add_argument("-j", "-t", "--threads", type=int, default=4, metavar="N", help="concurrency level for test cases")
+    parser.add_argument("-j", "-t", "--threads", type=int, metavar="N", help="concurrency level for test cases; default is cpu count")
     parser.add_argument("--log-input", help="log feeding of input lines at DEBUG level")
     parser.add_argument("--filter", metavar="PATTERN", help="match test case input filenames against PATTERN")
     parser.add_argument("--report", metavar="ACTION", choices=_REPORT_CHOICES, default='diff', help=f"what to print on test case failure; one of {_REPORT_CHOICES}; default is 'diff'")
