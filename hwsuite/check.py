@@ -8,6 +8,7 @@
 import argparse
 import difflib
 import fnmatch
+import re
 import sys
 import logging
 import threading
@@ -19,14 +20,16 @@ import time
 from hwsuite import testcases
 from subprocess import PIPE, DEVNULL
 from argparse import ArgumentParser
-from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet
+from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet, Generator, Callable
 from hwsuite import _cmd
 import hwsuite.build
+
 
 _log = logging.getLogger(__name__)
 _DEFAULT_PAUSE_DURATION_SECONDS = 0.5
 _REPORT_CHOICES = ('diff', 'full', 'repr', 'none')
 _TEST_CASES_CHOICES = ('auto', 'require', 'existing')
+
 
 def read_file_text(pathname: str, ignore_failure=False) -> str:
     try:
@@ -47,6 +50,14 @@ class TestCase(NamedTuple):
     input_file: Optional[str]
     expected_file: str
     env: Optional[FrozenSet[Tuple[str, str]]]
+
+    def env_dict(self) -> Optional[Dict[str, str]]:
+        return None if self.env is None else dict(self.env)
+
+    @staticmethod
+    def create(input_file: Optional[str], expected_file: str, env: Optional[Dict[str, str]]=None):
+        env = None if env is None else frozenset(env.items())
+        return TestCase(input_file, expected_file, env)
 
 
 def _read_env(env_file) -> Dict[str, str]:
@@ -116,12 +127,18 @@ class TestCaseOutcome(NamedTuple):
 
     passed: bool
     executable: str
-    input_file: Optional[str]
+    test_case: TestCase
     expected_text: str
     actual_text: str
     message: str
 
 
+def _spaces_to_tabs(text: str) -> str:
+    """Replace sequences of multiple spaces with a single tab character."""
+    return re.sub(r' {2,}', "\t", text)
+
+
+# noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
     def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS, log_input=False, stuff_mode='auto', args=None):
@@ -131,6 +148,7 @@ class TestCaseRunner(object):
         self.stuff_mode = stuff_mode
         self.args = args
         self.skip_screen_if_no_input = False
+        self.strict_check = False
 
     def _pause(self, duration=None):
         time.sleep(self.pause_duration if duration is None else duration)
@@ -140,21 +158,47 @@ class TestCaseRunner(object):
             line += "\n"
         return line
 
-    def run_test_case(self, input_file: Optional[str], expected_file: str, env: Dict[str, str]=None) -> TestCaseOutcome:
+    def _transform_screenlog(self, actual_text: str, expected_text: str) -> Generator[str, None, None]:
+        """Transforms screenlog text into multiple strings suitable for comparison to expected text.
+
+        We always return the original text unchanged as the first element of the returned list.
+        If the expected text has certain characteristics, then additional candidate strings may
+        be appended to the list.
+
+        One problem we encounter is a Screen bug wherein tabs are printed as spaces to screenlog.
+        See https://serverfault.com/a/278051. To handle that case, if the expected text contains
+        tabs, then a transform is applied the actual text wherein """
+        yield actual_text
+        if "\t" in expected_text:
+            yield _spaces_to_tabs(actual_text)
+
+    def _compare_texts(self, expected, actual) -> bool:
+        return expected == actual
+
+    def _check(self, expected_text: str, actual_text: str, to_outcome: Callable[[bool, str, str, str], TestCaseOutcome]) -> TestCaseOutcome:
+        expected_texts = [expected_text]
+        if not self.strict_check and "\t" in expected_text:
+            # TODO determine whether there's a way to modify the expected text for comparison
+            pass
+        for candidate in self._transform_screenlog(actual_text, expected_text):
+            for expected_text_ in expected_texts:
+                if self._compare_texts(candidate, expected_text_):
+                    return to_outcome(True, expected_text_, actual_text, "ok")
+        return to_outcome(False, expected_text, actual_text, "diff")
+
+    def run_test_case(self, test_case: TestCase) -> TestCaseOutcome:
+        input_file = test_case.input_file
+        expected_file = test_case.expected_file
+        env = test_case.env_dict()
+
         tid = threading.current_thread().ident
         expected_text = read_file_text(expected_file)
 
-        def outcome(passed: bool, actual_text: Optional[str], message: str):
-            return TestCaseOutcome(passed, self.executable, input_file, expected_text, actual_text, message)
+        def make_outcome(passed: bool, expected_text_: str, actual_text: Optional[str], message: str) -> TestCaseOutcome:
+            return TestCaseOutcome(passed, self.executable, test_case, expected_text_, actual_text, message)
 
-        def check(actual_text: str):
-            expected_text_ = expected_text
-            if "\t" in expected_text_:
-                _log.info("expected text contains tabs; we will accept spaces")
-                expected_text_ = expected_text_.replace("\t", "       ")
-            if actual_text != expected_text_:
-                return outcome(False, actual_text, "diff")
-            return outcome(True, actual_text, "ok")
+        def check(actual_text: str) -> TestCaseOutcome:
+            return self._check(expected_text, actual_text, make_outcome)
 
         if input_file is None and self.skip_screen_if_no_input:
             output = _cmd([self.executable] + (self.args or []))
@@ -171,7 +215,7 @@ class TestCaseRunner(object):
                 cmd += self.args
             exitcode = subprocess.call(cmd, env=env, cwd=tempdir)
             if exitcode != 0:
-                return outcome(False, None, f"screen start failure {exitcode}")
+                return make_outcome(False, expected_text, None, f"screen start failure {exitcode}")
             _log.debug("[%s] screen session %s started for %s; feeding lines from %s", tid, case_id, os.path.basename(self.executable), None if input_file is None else os.path.basename(input_file))
             completed = False
             try:
@@ -185,7 +229,7 @@ class TestCaseRunner(object):
                         stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
                         msg = f"[{tid}] stuff exit code {proc.returncode} feeding line {i+1}; stderr={stderr}; stdout={stdout}"
                         _log.debug(msg)
-                        return outcome(False, read_file_text(screenlog, True), msg)
+                        return make_outcome(False, expected_text, read_file_text(screenlog, True), msg)
                 completed = True
                 # TODO: reattach to session and wait for termination (with a timeout)
             finally:
@@ -200,7 +244,7 @@ class TestCaseRunner(object):
 
 class ConcurrencyManager(object):
     
-    def __init__(self, runner, concurrency_level: int, q_name, outcomes):
+    def __init__(self, runner: TestCaseRunner, concurrency_level: int, q_name, outcomes):
         self.concurrer = threading.Semaphore(concurrency_level)
         self.runner = runner
         self.q_name = q_name
@@ -209,10 +253,9 @@ class ConcurrencyManager(object):
 
     def perform(self, test_case: TestCase, i):
         input_file, expected_file, env = test_case
-        env = None if env is None else dict(env)
         self.concurrer.acquire()
         try:
-            outcome = self.runner.run_test_case(input_file, expected_file, env)
+            outcome = self.runner.run_test_case(test_case)
             input_name = os.path.basename(input_file)
             if outcome.passed:
                 _log.debug("%s: case %s (%s) passed", self.q_name, i + 1, input_name)
@@ -230,7 +273,7 @@ class ConcurrencyManager(object):
 def report(outcomes: List[TestCaseOutcome], report_type: str, ofile=sys.stderr):
     for outcome in outcomes:
         q_name = os.path.basename(outcome.executable)
-        input_name = os.path.basename(outcome.input_file)
+        input_name = os.path.basename(outcome.test_case.input_file)
         print(f"{q_name}: {input_name}: {outcome.message}")
         if outcome.message == 'diff':
             if report_type == 'diff':

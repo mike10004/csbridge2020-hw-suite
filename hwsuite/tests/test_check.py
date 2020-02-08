@@ -22,7 +22,7 @@ def _create_namespace(**kwargs) -> argparse.Namespace:
     return check_args
 
 
-class TestCaseRunnerTest(TestCase):
+class ModuleTest(TestCase):
 
     def test__read_env(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -44,55 +44,18 @@ baz=gaw""")
             }
             self.assertDictEqual(expected, env)
 
-    def test_run_test_case(self):
-        t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
-        with tempfile.TemporaryDirectory() as tempdir:
-            input_file = os.path.join(tempdir, 'input.txt')
-            expected_file = os.path.join(tempdir, 'expected.txt')
-            with open(input_file, 'w') as ofile:
-                ofile.write("1\n2\n")
-            with open(expected_file, 'w') as ofile:
-                ofile.write("1\nfoo 1\n2\nfoo 2\n")
-            outcome = t.run_test_case(input_file, expected_file)
-        print(outcome)
-        self.assertTrue(outcome.passed)
-
-    def test_run_test_case_no_input(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            any_file = os.path.join(tempdir, 'text.txt')
-            with open(any_file, 'w') as ofile:
-                ofile.write("This is my story\n")
-            expected_file = os.path.join(tempdir, 'expected.txt')
-            with open(expected_file, 'w') as ofile:
-                ofile.write("This is my story\n")
-            t = check.TestCaseRunner('cat', args=[any_file])
-            outcome = t.run_test_case(None, expected_file)
-        print(outcome)
-        self.assertTrue(outcome.passed)
-
-    def test_run_test_case_tabs(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            any_file = os.path.join(tempdir, 'text.txt')
-            cat_text = "A\tB\tC\n"
-            with open(any_file, 'w') as ofile:
-                ofile.write(cat_text)
-            expected_file = os.path.join(tempdir, 'expected.txt')
-            with open(expected_file, 'w') as ofile:
-                ofile.write(cat_text)
-            t = check.TestCaseRunner('cat', args=[any_file])
-            outcome = t.run_test_case(None, expected_file)
-        print(outcome)
-        self.assertTrue(outcome.passed)
-
-    def test_run_test_case_env(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            expected_file = os.path.join(tempdir, 'expected.txt')
-            with open(expected_file, 'w') as ofile:
-                ofile.write("bar\n")
-            t = check.TestCaseRunner('bash', args=['-c', 'echo $FOO'])
-            outcome = t.run_test_case(None, expected_file, {'FOO': 'bar'})
-        print(outcome)
-        self.assertTrue(outcome.passed)
+    def test__spaces_to_tabs(self):
+        for text, expected in [
+            ("a  b", "a\tb"),
+            ("a   b", "a\tb"),
+            ("a                           b", "a\tb"),
+            ("a\tb", "a\tb"),
+            ("a b", "a b"),
+            ("a b   c", "a b\tc"),
+        ]:
+            with self.subTest():
+                actual = check._spaces_to_tabs(text)
+                self.assertEqual(expected, actual, f"wrong result on input {repr(text)}")
 
     def test__derive_counterparts(self):
         test_cases = [
@@ -106,3 +69,57 @@ baz=gaw""")
             with self.subTest():
                 actual = check._derive_counterparts(argpath, True)
                 self.assertTupleEqual((inbase, envbase), actual)
+
+
+class TestCaseRunnerTest(TestCase):
+
+    def test_run_test_case(self):
+        t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
+        with tempfile.TemporaryDirectory() as tempdir:
+            input_file = os.path.join(tempdir, 'input.txt')
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(input_file, 'w') as ofile:
+                ofile.write("1\n2\n")
+            with open(expected_file, 'w') as ofile:
+                ofile.write("1\nfoo 1\n2\nfoo 2\n")
+            outcome = t.run_test_case(check.TestCase.create(input_file, expected_file))
+        print(outcome)
+        self.assertTrue(outcome.passed)
+
+    def test_run_test_case_no_input(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            any_file = os.path.join(tempdir, 'text.txt')
+            with open(any_file, 'w') as ofile:
+                ofile.write("This is my story\n")
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(expected_file, 'w') as ofile:
+                ofile.write("This is my story\n")
+            t = check.TestCaseRunner('cat', args=[any_file])
+            outcome = t.run_test_case(check.TestCase.create(None, expected_file))
+        print(outcome)
+        self.assertTrue(outcome.passed)
+
+    def test_run_test_case_tabs(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            any_file = os.path.join(tempdir, 'text.txt')
+            cat_text = "A\tB\tC\n"
+            with open(any_file, 'w') as ofile:
+                ofile.write(cat_text)
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(expected_file, 'w') as ofile:
+                ofile.write(cat_text)
+            t = check.TestCaseRunner('cat', args=[any_file])
+            outcome = t.run_test_case(check.TestCase.create(None, expected_file))
+        print(outcome)
+        self.assertTrue(outcome.passed)
+
+    def test_run_test_case_env(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(expected_file, 'w') as ofile:
+                ofile.write("bar\n")
+            t = check.TestCaseRunner('bash', args=['-c', 'echo $FOO'])
+            outcome = t.run_test_case(check.TestCase.create(None, expected_file, {'FOO': 'bar'}))
+        print(outcome)
+        self.assertTrue(outcome.passed)
+
