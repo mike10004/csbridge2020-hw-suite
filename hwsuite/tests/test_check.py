@@ -24,6 +24,26 @@ def _create_namespace(**kwargs) -> argparse.Namespace:
 
 class TestCaseRunnerTest(TestCase):
 
+    def test__read_env(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            env_file = os.path.join(tempdir, 'env.txt')
+            with open(env_file, 'w') as ofile:
+                ofile.write("""\
+foo=bar
+haw
+jek=
+dee=cee=gur
+baz=gaw""")
+            env = check._read_env(env_file)
+            expected = {
+                'foo': 'bar',
+                'haw': '',
+                'jek': '',
+                'dee': 'cee=gur',
+                'baz': 'gaw',
+            }
+            self.assertDictEqual(expected, env)
+
     def test_run_test_case(self):
         t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
         with tempfile.TemporaryDirectory() as tempdir:

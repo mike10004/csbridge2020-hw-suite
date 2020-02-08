@@ -19,7 +19,7 @@ import time
 from hwsuite import testcases
 from subprocess import PIPE, DEVNULL
 from argparse import ArgumentParser
-from typing import List, Tuple, Optional, NamedTuple
+from typing import List, Tuple, Optional, NamedTuple, Dict
 from hwsuite import _cmd
 import hwsuite.build
 
@@ -42,18 +42,43 @@ def read_file_lines(pathname: str) -> List[str]:
         return [line for line in ifile]
 
 
-def detect_test_case_files(q_dir: str) -> List[Tuple[Optional[str], str]]:
+class TestCase(NamedTuple):
+
+    input_file: Optional[str]
+    expected_file: str
+    env: Optional[dict]
+
+
+def _read_env(env_file) -> Dict[str, str]:
+    env = {}
+    with open(env_file, 'r') as ifile:
+        for line in ifile:
+            line = line.strip("\r\n")
+            parts = line.split("=", 1)
+            if len(parts) > 1:
+                env[parts[0]] = parts[1]
+            elif len(parts) > 0 and parts[0]:
+                env[parts[0]] = ''
+    return env
+
+
+def detect_test_case_files(q_dir: str) -> List[TestCase]:
     test_cases = []
     for root, dirs, files in os.walk(q_dir):
         for f in files:
             if f.startswith('input'):
                 input_file = os.path.join(root, f)
-                expected_file = os.path.join(root, "expected-output" + f[5:])
-                test_cases.append((input_file, expected_file))
+                suffix  = f[len('input'):]
+                expected_file = os.path.join(root, "expected-output" + suffix)
+                env_file = os.path.join(root, "env" + suffix)
+                env = None
+                if os.path.exists(env_file):
+                    env = _read_env(env_file)
+                test_cases.append(TestCase(input_file, expected_file, env))
     if not test_cases:
         expected_file = os.path.join(q_dir, 'expected-output.txt')
         if os.path.isfile(expected_file):
-            return [(None, expected_file)]
+            return [TestCase(None, expected_file, None)]
         return []
     return sorted(test_cases)
 
@@ -86,7 +111,7 @@ class TestCaseRunner(object):
             line += "\n"
         return line
 
-    def run_test_case(self, input_file: Optional[str], expected_file: str) -> TestCaseOutcome:
+    def run_test_case(self, input_file: Optional[str], expected_file: str, env=None) -> TestCaseOutcome:
         tid = threading.current_thread().ident
         expected_text = read_file_text(expected_file)
 
@@ -115,7 +140,7 @@ class TestCaseRunner(object):
             cmd = ['screen', '-L', '-S', case_id, '-d', '-m', '--', self.executable]
             if self.args:
                 cmd += self.args
-            exitcode = subprocess.call(cmd, cwd=tempdir)
+            exitcode = subprocess.call(cmd, env=env, cwd=tempdir)
             if exitcode != 0:
                 return outcome(False, None, f"screen start failure {exitcode}")
             _log.debug("[%s] screen session %s started for %s; feeding lines from %s", tid, case_id, os.path.basename(self.executable), None if input_file is None else os.path.basename(input_file))
@@ -143,6 +168,7 @@ class TestCaseRunner(object):
         return check(output)
 
 
+
 class ConcurrencyManager(object):
     
     def __init__(self, runner, concurrency_level: int, q_name, outcomes):
@@ -152,8 +178,8 @@ class ConcurrencyManager(object):
         self.outcomes = outcomes
         self.outcomes_lock = threading.Lock()
 
-    def perform(self, test_case, i):
-        input_file, expected_file = test_case
+    def perform(self, test_case: TestCase, i):
+        input_file, expected_file, env = test_case
         self.concurrer.acquire()
         try:
             outcome = self.runner.run_test_case(input_file, expected_file)
