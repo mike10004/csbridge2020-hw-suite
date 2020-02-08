@@ -83,3 +83,13 @@ baz=gaw""")
             outcome = t.run_test_case(None, expected_file)
         print(outcome)
         self.assertTrue(outcome.passed)
+
+    def test_run_test_case_env(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(expected_file, 'w') as ofile:
+                ofile.write("bar\n")
+            t = check.TestCaseRunner('bash', args=['-c', 'echo $FOO'])
+            outcome = t.run_test_case(None, expected_file, {'FOO': 'bar'})
+        print(outcome)
+        self.assertTrue(outcome.passed)
