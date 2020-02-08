@@ -86,3 +86,9 @@ def configure_logging(args: argparse.Namespace):
 
 def add_logging_options(parser: argparse.ArgumentParser):
     parser.add_argument("-l", "--log-level", metavar="LEVEL", choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO', help="set log level")
+
+
+def describe_path(pathname):
+    relpath = os.path.relpath(pathname)
+    abspath = os.path.abspath(pathname)
+    return relpath if len(relpath) < len(abspath) else abspath
