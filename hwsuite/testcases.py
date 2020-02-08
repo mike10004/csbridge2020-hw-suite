@@ -55,6 +55,8 @@ class ParameterSource(NamedTuple):
     def load(model: Dict, root_dir: str) -> 'ParameterSource':
         test_cases = []
         input_text_template = None
+        if 'input' in model and 'input_file' in model:
+            _log.warning("model defines both 'input' and 'input_file'; using 'input'")
         if 'input' in model:
             input_text_template = model['input']
         elif 'input_file' in model:
@@ -65,6 +67,8 @@ class ParameterSource(NamedTuple):
         if input_text_template is None:
             raise ValueError("model must define 'input' or 'input_file'")
         expected_text_template = None
+        if 'expected' in model and 'expected_file' in model:
+            _log.warning("model defines both 'expected' and 'expected_file'; using 'expected'")
         if 'expected' in model:
             expected_text_template = model['expected']
         elif 'expected_file' in model:
