@@ -104,12 +104,12 @@ def write_cases(param_source: ParameterSource, dest_dir: str, suffix=".txt"):
         try:
             rendered_input = param_source.render_input_text(test_case)
             case_id = ("{0:0" + str(param_source.precision()) + "d}").format(i + 1)
-            input_filename = f"input{case_id}{suffix}"
+            input_filename = f"{case_id}-input{suffix}"
             input_pathname = os.path.join(dest_dir, input_filename)
             os.makedirs(os.path.dirname(input_pathname), exist_ok=True)
             with open(input_pathname, 'w') as ofile:
                 ofile.write(rendered_input)
-            expected_filename = f"expected-output{case_id}{suffix}"
+            expected_filename = f"{case_id}-expected{suffix}"
             expected_pathname = os.path.join(dest_dir, expected_filename)
             os.makedirs(os.path.dirname(expected_pathname), exist_ok=True)
             with open(expected_pathname, 'w') as ofile:
