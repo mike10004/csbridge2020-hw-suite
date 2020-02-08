@@ -76,6 +76,7 @@ class TestCaseRunner(object):
         self.log_input = log_input
         self.stuff_mode = stuff_mode
         self.args = args
+        self.skip_screen_if_no_input = False
 
     def _pause(self, duration=None):
         time.sleep(self.pause_duration if duration is None else duration)
@@ -97,11 +98,14 @@ class TestCaseRunner(object):
                 return outcome(False, actual_text, "diff")
             return outcome(True, actual_text, "ok")
 
-        if input_file is None:
+        if input_file is None and self.skip_screen_if_no_input:
             output = _cmd([self.executable] + (self.args or []))
             return check(output)
-        
-        input_lines = read_file_lines(input_file)
+
+        if input_file is None:
+            input_lines = []
+        else:
+            input_lines = read_file_lines(input_file)
         case_id = str(uuid.uuid4())
         with tempfile.TemporaryDirectory() as tempdir:
             cmd = ['screen', '-L', '-S', case_id, '-d', '-m', '--', self.executable]
@@ -110,7 +114,7 @@ class TestCaseRunner(object):
             exitcode = subprocess.call(cmd, cwd=tempdir)
             if exitcode != 0:
                 return outcome(False, None, f"screen start failure {exitcode}")
-            _log.debug("[%s] screen session %s started for %s; feeding lines from %s", tid, case_id, os.path.basename(self.executable), os.path.basename(input_file))
+            _log.debug("[%s] screen session %s started for %s; feeding lines from %s", tid, case_id, os.path.basename(self.executable), None if input_file is None else os.path.basename(input_file))
             completed = False
             try:
                 screenlog = os.path.join(tempdir, 'screenlog.0')

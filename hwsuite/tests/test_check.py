@@ -49,3 +49,17 @@ class TestCaseRunnerTest(TestCase):
             outcome = t.run_test_case(None, expected_file)
         print(outcome)
         self.assertTrue(outcome.passed)
+
+    def test_run_test_case_tabs(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            any_file = os.path.join(tempdir, 'text.txt')
+            cat_text = "A\tB\tC\n"
+            with open(any_file, 'w') as ofile:
+                ofile.write(cat_text)
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            with open(expected_file, 'w') as ofile:
+                ofile.write(cat_text)
+            t = check.TestCaseRunner('cat', args=[any_file])
+            outcome = t.run_test_case(None, expected_file)
+        print(outcome)
+        self.assertTrue(outcome.passed)
