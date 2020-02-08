@@ -54,3 +54,29 @@ q3/question.md
                 else:
                     founds.add(expected)
             self.assertSetEqual(expecteds, founds)
+
+    def test__should_remove_yes(self):
+        for line in [
+            "int main() {      // stage:remove",
+            "garbage     // stage:remove because reasons",
+            "garbage     // stage:remove  ",
+            "garbage     // stage: remove  ",
+            "garbage     // stage:\tremove  ",
+            "garbage// stage:remove  ",
+            "garbage //      \t     stage:remove  ",
+        ]:
+            with self.subTest():
+                actual = stage._should_remove(line)
+                self.assertTrue(actual)
+
+    def test__should_remove_no(self):
+        for line in [
+            "int main() {",
+            "garbage     // stage:something",
+            "garbage     // stage: ",
+            "garbage// stage: rmeove  ",
+            "garbage //      \t     stage:remove2  ",
+        ]:
+            with self.subTest():
+                actual = stage._should_remove(line)
+                self.assertFalse(actual)

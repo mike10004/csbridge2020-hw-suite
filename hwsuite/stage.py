@@ -10,7 +10,7 @@ import fnmatch
 import logging
 import shutil
 from typing import List
-
+import re
 import hwsuite
 
 
@@ -37,6 +37,23 @@ def clean(stage_dir: str):
     if ndirs > 0 or nfiles > 0:
         _log.info("%s directories and %s files deleted", ndirs, nfiles)
 
+
+def _should_remove(line) -> bool:
+    return re.search(r'//\s*stage:\s*remove(\s+.*)?$', line) is not None
+
+
+def _transfer(src_file, dst_file) -> str:
+    """Copy src_file to dst_file, removing lines marked for removal, and return the text written."""
+    with open(src_file, 'r') as ifile:
+        src_lines = [line for line in ifile]
+    good_lines = []
+    for line in src_lines:
+        if not _should_remove(line):
+            good_lines.append(line)
+    with open(dst_file, 'w') as ofile:
+        for line in good_lines:
+            ofile.write(line)
+    return ''.join(good_lines)
 
 def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[str]=None, cfg: dict=None, default_stage_dir_basename='stage', no_clean=False) -> int:
     """Stages files and returns number of files staged."""
@@ -87,7 +104,7 @@ def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[s
         dest_mapping[cpp_file] = dest_pathname
     for src_file, dst_file in dest_mapping.items():
         os.makedirs(os.path.dirname(dst_file), exist_ok=True)
-        shutil.copy(src_file, dst_file)
+        _transfer(src_file, dst_file)
         _log.debug("copied %s -> %s", src_file, dst_file)
     return len(dest_mapping)
 
