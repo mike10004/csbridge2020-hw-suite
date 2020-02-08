@@ -19,7 +19,7 @@ import time
 from hwsuite import testcases
 from subprocess import PIPE, DEVNULL
 from argparse import ArgumentParser
-from typing import List, Tuple, Optional, NamedTuple, Dict
+from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet
 from hwsuite import _cmd
 import hwsuite.build
 
@@ -46,7 +46,7 @@ class TestCase(NamedTuple):
 
     input_file: Optional[str]
     expected_file: str
-    env: Optional[dict]
+    env: Optional[FrozenSet[Tuple[str, str]]]
 
 
 def _read_env(env_file) -> Dict[str, str]:
@@ -73,7 +73,7 @@ def detect_test_case_files(q_dir: str) -> List[TestCase]:
                 env_file = os.path.join(root, "env" + suffix)
                 env = None
                 if os.path.exists(env_file):
-                    env = _read_env(env_file)
+                    env = frozenset(_read_env(env_file).items())
                 test_cases.append(TestCase(input_file, expected_file, env))
     if not test_cases:
         expected_file = os.path.join(q_dir, 'expected-output.txt')
@@ -111,7 +111,7 @@ class TestCaseRunner(object):
             line += "\n"
         return line
 
-    def run_test_case(self, input_file: Optional[str], expected_file: str, env=None) -> TestCaseOutcome:
+    def run_test_case(self, input_file: Optional[str], expected_file: str, env: Dict[str, str]=None) -> TestCaseOutcome:
         tid = threading.current_thread().ident
         expected_text = read_file_text(expected_file)
 
@@ -180,9 +180,10 @@ class ConcurrencyManager(object):
 
     def perform(self, test_case: TestCase, i):
         input_file, expected_file, env = test_case
+        env = None if env is None else dict(env)
         self.concurrer.acquire()
         try:
-            outcome = self.runner.run_test_case(input_file, expected_file)
+            outcome = self.runner.run_test_case(input_file, expected_file, env)
             input_name = os.path.basename(input_file)
             if outcome.passed:
                 _log.debug("%s: case %s (%s) passed", self.q_name, i + 1, input_name)

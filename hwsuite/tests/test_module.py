@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import tempfile
+from pathlib import Path
 from unittest import TestCase
 import hwsuite
 import hwsuite.init
@@ -29,3 +30,13 @@ class ModuleMethodsTest(TestCase):
             os.makedirs(subdir)
             actual = hwsuite.find_proj_root(cwd=subdir)
             self.assertEqual(tempdir, actual)
+
+    def test_store_config(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            proj_root = tempdir
+            hwsuite.init.do_init(proj_root, 'unittest-example', safety_mode='abort')
+            cfg = hwsuite.get_config(proj_root=proj_root)
+            cfg['foo'] = 'bar'
+            hwsuite.store_config(cfg, proj_root=proj_root)
+            cfg = hwsuite.get_config(proj_root=proj_root)
+            self.assertDictEqual({'foo': 'bar'}, cfg)

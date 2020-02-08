@@ -74,8 +74,8 @@ def get_config(cfg_pathname=None, proj_root=None):
 
 
 def store_config(cfg=None, cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
-    cfg = cfg or get_config(cfg_pathname, proj_root=proj_root)
-    cfg_pathname = cfg_pathname or os.path.join(find_proj_root(), default_cfg_filename)
+    cfg = cfg if cfg is not None else get_config(cfg_pathname, proj_root=proj_root)
+    cfg_pathname = cfg_pathname or os.path.join(proj_root or find_proj_root(), default_cfg_filename)
     with open(cfg_pathname, 'w') as ofile:
         json.dump(cfg, ofile, indent=2)
 

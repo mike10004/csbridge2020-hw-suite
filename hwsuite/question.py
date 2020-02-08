@@ -76,7 +76,7 @@ class Questioner(object):
 
 
     def _render(self, template: str, q_name: str, output_file: str, cfg=None):
-        cfg = cfg or hwsuite.get_config(proj_root=self.proj_dir)
+        cfg = cfg if cfg is not None else hwsuite.get_config(proj_root=self.proj_dir)
         question_model = cfg.get('question_model', {})
         model = {
             'q_name': q_name,
