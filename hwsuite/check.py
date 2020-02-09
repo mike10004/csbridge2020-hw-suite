@@ -30,16 +30,19 @@ _log = logging.getLogger(__name__)
 _DEFAULT_PAUSE_DURATION_SECONDS = 0.5
 _REPORT_CHOICES = ('diff', 'full', 'repr', 'none')
 _TEST_CASES_CHOICES = ('auto', 'require', 'existing')
+_ERR_TEST_CASE_FAILURES = 3
 
 
-def read_file_text(pathname: str, ignore_failure=False) -> str:
+def read_file_text(pathname: str, ignore_failure=False) -> Optional[str]:
+    """Reads text from a file, possibly ignoring errors.
+    Returns file text or None if failure did occur but was ignored.
+    """
     try:
         with open(pathname, 'r') as ifile:
             return ifile.read()
     except IOError:
         if not ignore_failure:
             raise
-
 
 def read_file_lines(pathname: str) -> List[str]:
     with open(pathname, 'r') as ifile:
@@ -139,6 +142,107 @@ def _spaces_to_tabs(text: str) -> str:
     return re.sub(r' {2,}', "\t", text)
 
 
+class ProcessDefinition(NamedTuple):
+
+    executable: str
+    args: Tuple[str, ...]
+    cwd: Optional[str]
+    env: Optional[Dict[str, str]]
+
+    def to_cmd(self):
+        return [self.executable] + list(self.args)
+
+
+class ScreenStateException(Exception):
+    pass
+
+
+# noinspection PyMethodMayBeStatic
+class ScreenRunnable(object):
+
+    def __init__(self, procdef, stuff_mode='auto', log_input=False):
+        self.procdef = procdef
+        self.stuff_mode = stuff_mode
+        self.log_input = log_input
+        self.case_id = str(uuid.uuid4())
+        self.completed_proc: Optional[subprocess.CompletedProcess] = None
+        self.logfile = os.path.join(self.procdef.cwd, 'screenlog.0')
+        self.launched = False
+
+    def __str__(self):
+        return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
+
+    def __call__(self):
+        cmd = ['screen', '-L', '-S', self.case_id, '-D', '-m', '--'] + self.procdef.to_cmd()
+        self.launched = True
+        self.completed_proc = subprocess.run(cmd, env=self.procdef.env, cwd=self.procdef.cwd)
+        _log.debug("screen process completed with exit code %s", self.completed_proc.returncode)
+
+    def _prepare_stuff(self, line):
+        if self.stuff_mode == 'auto' and line[-1] != "\n":
+            line += "\n"
+        return line
+
+    def stuff(self, line, line_num=0) -> subprocess.CompletedProcess:
+        """Sends a line of text to process standard input.
+        This uses the screen command 'stuff'. The line number is used only for log messages."""
+        if not self.launched or self.finished():
+            raise ScreenStateException(str(self))
+        thread_id = threading.current_thread().ident
+        # note: it is important for 'stuff' command that line has terminal newline char
+        line = self._prepare_stuff(line)
+        if self.log_input:
+            _log.debug("[%s] feeding line %s to process: %s", thread_id, line_num, repr(line))
+        proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)
+        if proc.returncode != 0:
+            stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
+            msg = f"[{thread_id}] stuff exit code {proc.returncode} feeding line {line_num}; stderr={stderr}; stdout={stdout}"
+            _log.debug(msg)
+        return proc
+
+    def stuff_eof(self):
+        proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', "^D"], stdout=PIPE, stderr=PIPE)
+        if proc.returncode != 0:
+            _log.info("sending EOF to process failed with code %s", proc.returncode)
+        return proc
+
+    def finished(self):
+        return self.completed_proc is not None
+
+    def quit(self) -> bool:
+        if not self.launched:
+            return True
+        if self.finished():
+            return True
+        _log.debug("quitting screen process")
+        exitcode = subprocess.call(['screen', '-S', self.case_id, '-X', 'quit'], stdout=DEVNULL, stderr=DEVNULL)
+        if not self.finished and exitcode != 0:  # there's a race here and we may not know the proc finished but it did and 'quit' returned error, but there are no ill effects and it's pretty rare
+            _log.warning("screen 'quit' failed with code %s", exitcode)
+        return exitcode == 0
+
+    def kill(self):
+        # TODO implement process kill; this means using a Popen object instead of subprocess.run in the __call__ function
+        if not self.finished():
+            _log.warning("kill() not implemented; you may have a stray process lying around")
+
+    def await_output(self, poll_interval: float=1.0, max_polls=60, requirement:Optional[Callable]=None, on_timeout='return'):
+        num_polls = 0
+        if requirement is None:
+            requirement = str.strip  # returns Truthy if text contains non-whitespace
+        text = None
+        while num_polls < max_polls:
+            text = self.logfile_text(True) or ''
+            if requirement(text):
+                return
+            time.sleep(poll_interval)
+            num_polls += 1
+        if on_timeout == 'raise':
+            raise TimeoutError()
+        return text
+
+    def logfile_text(self, ignore_failure=False):
+        return read_file_text(self.logfile, ignore_failure)
+
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
@@ -150,14 +254,12 @@ class TestCaseRunner(object):
         self.args = args
         self.skip_screen_if_no_input = False
         self.strict_check = False
+        self.processing_timeout: float = 5.0
+        self.send_eof = False
+        self.await_output_before_stuff = False
 
     def _pause(self, duration=None):
         time.sleep(self.pause_duration if duration is None else duration)
-
-    def _prepare_stuff(self, line):
-        if self.stuff_mode == 'auto' and line[-1] != "\n":
-            line += "\n"
-        return line
 
     def _transform_screenlog(self, actual_text: str, expected_text: str) -> Generator[str, None, None]:
         """Transforms screenlog text into multiple strings suitable for comparison to expected text.
@@ -190,9 +292,6 @@ class TestCaseRunner(object):
     def run_test_case(self, test_case: TestCase) -> TestCaseOutcome:
         input_file = test_case.input_file
         expected_file = test_case.expected_file
-        env = test_case.env_dict()
-
-        tid = threading.current_thread().ident
         expected_text = read_file_text(expected_file)
 
         def make_outcome(passed: bool, expected_text_: str, actual_text: Optional[str], message: str) -> TestCaseOutcome:
@@ -209,36 +308,35 @@ class TestCaseRunner(object):
             input_lines = []
         else:
             input_lines = read_file_lines(input_file)
-        case_id = str(uuid.uuid4())
+        thread_id = threading.current_thread().ident
         with tempfile.TemporaryDirectory() as tempdir:
-            cmd = ['screen', '-L', '-S', case_id, '-d', '-m', '--', self.executable]
-            if self.args:
-                cmd += self.args
-            exitcode = subprocess.call(cmd, env=env, cwd=tempdir)
-            if exitcode != 0:
-                return make_outcome(False, expected_text, None, f"screen start failure {exitcode}")
-            _log.debug("[%s] screen session %s started for %s; feeding lines from %s", tid, case_id, os.path.basename(self.executable), None if input_file is None else os.path.basename(input_file))
-            completed = False
+            # we could use -Logfile filename to make this more stable
+            procdef = ProcessDefinition(self.executable, self.args or [], tempdir, test_case.env_dict())
+            screener = ScreenRunnable(procdef, self.stuff_mode, self.log_input)
+            screener_thread = threading.Thread(target=screener)
+            screener_thread.start()
+            _log.debug("[%s] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
+                       None if input_file is None else os.path.basename(input_file))
             try:
-                screenlog = os.path.join(tempdir, 'screenlog.0')
+                if self.await_output_before_stuff:
+                    screener.await_output(poll_interval=0.25, max_polls=10)
                 for i, line in enumerate(input_lines):
                     self._pause()
-                    line = self._prepare_stuff(line)
-                    if self.log_input: _log.debug("[%s] feeding line %s to process: %s", tid, i+1, repr(line))
-                    proc = subprocess.run(['screen', '-S', case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)  # note: important that line has terminal newline char
+                    proc = screener.stuff(line, i + 1)
                     if proc.returncode != 0:
-                        stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
-                        msg = f"[{tid}] stuff exit code {proc.returncode} feeding line {i+1}; stderr={stderr}; stdout={stdout}"
-                        _log.debug(msg)
-                        return make_outcome(False, expected_text, read_file_text(screenlog, True), msg)
-                completed = True
-                # TODO: reattach to session and wait for termination (with a timeout)
+                        actual_text_ = screener.logfile_text(ignore_failure=True)
+                        return make_outcome(False, expected_text, actual_text_, "stuff")
+                if self.send_eof:
+                    screener.stuff_eof()
+                _log.debug("[%s] waiting %s seconds for process to terminate", thread_id, self.processing_timeout)
+                screener_thread.join(self.processing_timeout)
             finally:
-                self._pause()  ## allow process to exit cleanly
-                exitcode = subprocess.call(['screen', '-S', case_id, '-X', 'quit'], stdout=DEVNULL, stderr=DEVNULL)  # ok if failed; probably already terminated
-                if not completed and exitcode != 0:
-                    _log.warning("screen 'quit' failed with code %s", exitcode)
-            output = read_file_text(screenlog).replace("\r\n", "\n")
+                if not screener.quit():
+                    if screener_thread.is_alive():
+                        screener.kill()
+            output = screener.logfile_text(ignore_failure=False)
+            if screener.completed_proc is not None and screener.completed_proc.returncode != 0:
+                return make_outcome(False, expected_text, output, f"screen -D -m {self.executable} exit code {screener.completed_proc.returncode}")
         return check(output)
 
 
@@ -309,7 +407,7 @@ def matches(filter_pattern: Optional[str], test_case: Tuple[Optional[str], str])
 
 
 def check_cpp(cpp_file: str, concurrency_level: int, pause_duration: float, max_test_cases:int, log_input: bool, 
-              filter_pattern: str, report_type: str, stuff_mode: str):
+              filter_pattern: str, report_type: str, stuff_mode: str, await_output_before_stuff: bool):
     q_dir = os.path.dirname(cpp_file)
     q_name = os.path.basename(q_dir)
     q_executable = os.path.join(q_dir, 'cmake-build', q_name)
@@ -319,6 +417,7 @@ def check_cpp(cpp_file: str, concurrency_level: int, pause_duration: float, max_
     if not test_case_files:
         return
     runner = TestCaseRunner(q_executable, pause_duration, log_input, stuff_mode)
+    runner.await_output_before_stuff = await_output_before_stuff
     outcomes = {}
     threads: List[threading.Thread] = []
     concurrency_mgr = ConcurrencyManager(runner, concurrency_level, q_name, outcomes)
@@ -342,6 +441,7 @@ def check_cpp(cpp_file: str, concurrency_level: int, pause_duration: float, max_
     elif len(outcomes) > 0:
         _log.info("%s: all %s tests pass", q_name, len(outcomes))
     report(failures, report_type)
+    return len(failures)
 
 
 def _main(args: argparse.Namespace):
@@ -364,6 +464,7 @@ def _main(args: argparse.Namespace):
         _log.error("no main.cpp files found")
         return 1
     num_threads = args.threads or multiprocessing.cpu_count()
+    total_failures = 0
     for i, cpp_file in enumerate(sorted(main_cpps)):
         if args.test_cases != 'existing':
             defs_file = os.path.join(os.path.dirname(cpp_file), 'test-cases.json')
@@ -372,8 +473,9 @@ def _main(args: argparse.Namespace):
                     raise FileNotFoundError(defs_file)
             else:
                 testcases.produce_from_defs(defs_file)
-        check_cpp(cpp_file, num_threads, args.pause, args.max_cases, args.log_input, args.filter, args.report, args.stuff)
-    return 0
+        per_cpp_failures = check_cpp(cpp_file, num_threads, args.pause, args.max_cases, args.log_input, args.filter, args.report, args.stuff, args.await)
+        total_failures += per_cpp_failures
+    return 0 if total_failures == 0 else _ERR_TEST_CASE_FAILURES
 
 
 def main():
@@ -389,6 +491,7 @@ def main():
     parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
     parser.add_argument("--test-cases", metavar="MODE", choices=_TEST_CASES_CHOICES, help=f"test case generation mode; choices are {_TEST_CASES_CHOICES}; default 'auto' means attempt to re-generate")
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
+    parser.add_argument("--await", action='store_true', help="await text on process output stream before sending anything")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:

@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-import glob
-import os
-import sys
-import tempfile
-from typing import List
-from unittest import TestCase
-from pathlib import Path
-from hwsuite import check
-import logging
 import argparse
+import logging
+import os
+import tempfile
+from unittest import TestCase
+from hwsuite import check
+import hwsuite.tests
 
+
+hwsuite.tests.configure_logging()
 
 _log = logging.getLogger(__name__)
 
+
 def _create_namespace(**kwargs) -> argparse.Namespace:
+    # noinspection PyProtectedMember
     check_args = argparse.Namespace(subdirs=[], pause=check._DEFAULT_PAUSE_DURATION_SECONDS,
                            max_cases=None, threads=4, log_input=False, filter=None, report='none',
-                           stuff='auto', test_cases='auto', project_dir=None)
+                           stuff='auto', test_cases='auto', project_dir=None, await=False)
     for k, v in kwargs.items():
         check_args.__setattr__(k, v)
     return check_args
@@ -75,6 +76,7 @@ class TestCaseRunnerTest(TestCase):
 
     def test_run_test_case(self):
         t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
+        t.send_eof = True
         with tempfile.TemporaryDirectory() as tempdir:
             input_file = os.path.join(tempdir, 'input.txt')
             expected_file = os.path.join(tempdir, 'expected.txt')
