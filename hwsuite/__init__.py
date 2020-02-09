@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
+
 import argparse
+import json
+import logging
 import os
 import os.path
-import json
-import threading
-from subprocess import PIPE, DEVNULL
 import subprocess
-import logging
-
 
 _log = logging.getLogger(__name__)
 CFG_FILENAME = ".hwconfig.json"
 _CACHE = {}
 _KEY_CFG = 'config'
 BUILD_DIR_BASENAME = 'cmake-build-debug'
+_LOG_LEVEL_CHOICES = ('DEBUG', 'INFO', 'WARNING', 'ERROR')
 
 
 class MessageworthyException(Exception):
+    """Exception superclass for exceptions that should programs should handle by
+    producing an informative error message and terminating.
+
+    This type is for errors that are of the sort that a user can react to and resolve,
+    such as providing malformed input, as opposed to unexpected states that likely
+    indicate program bugs.
+    """
     pass
 
 
@@ -86,7 +92,8 @@ def configure_logging(args: argparse.Namespace):
 
 
 def add_logging_options(parser: argparse.ArgumentParser):
-    parser.add_argument("-l", "--log-level", metavar="LEVEL", choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO', help="set log level")
+    parser.add_argument("-l", "--log-level", metavar="LEVEL", choices=_LOG_LEVEL_CHOICES, default='INFO',
+                        help=f"set log level to one of {_LOG_LEVEL_CHOICES}")
 
 
 def describe_path(pathname):
