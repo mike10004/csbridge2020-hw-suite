@@ -157,6 +157,11 @@ class ScreenStateException(Exception):
     pass
 
 
+class PollConfig(NamedTuple):
+
+    interval: float
+    limit: int
+
 # noinspection PyMethodMayBeStatic
 class ScreenRunnable(object):
 
@@ -165,18 +170,30 @@ class ScreenRunnable(object):
         self.stuff_mode = stuff_mode
         self.log_input = log_input
         self.case_id = str(uuid.uuid4())
+        self.started_proc: Optional[subprocess.Popen] = None
         self.completed_proc: Optional[subprocess.CompletedProcess] = None
         self.logfile = os.path.join(self.procdef.cwd, 'screenlog.0')
-        self.launched = False
 
     def __str__(self):
         return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
 
-    def __call__(self):
+    def launched(self):
+        return not self.finished() and self.started_proc is not None
+
+    def start(self):
         cmd = ['screen', '-L', '-S', self.case_id, '-D', '-m', '--'] + self.procdef.to_cmd()
-        self.launched = True
-        self.completed_proc = subprocess.run(cmd, env=self.procdef.env, cwd=self.procdef.cwd)
-        _log.debug("screen process completed with exit code %s", self.completed_proc.returncode)
+        self.started_proc = subprocess.Popen(cmd, env=self.procdef.env, cwd=self.procdef.cwd, stdout=PIPE, stderr=PIPE)
+        return self.started_proc
+
+    def await_proc(self, timeout: float):
+        try:
+            self.started_proc.wait(timeout)
+            self.completed_proc = subprocess.CompletedProcess(self.started_proc.args, self.started_proc.returncode, '', '')
+            self.started_proc = None
+            _log.debug("screen process completed with exit code %s", self.completed_proc.returncode)
+        except subprocess.TimeoutExpired:
+            _log.warning("process did not terminate before timeout of %s seconds elapsed", timeout)
+            pass
 
     def _prepare_stuff(self, line):
         if self.stuff_mode == 'auto' and line[-1] != "\n":
@@ -186,7 +203,7 @@ class ScreenRunnable(object):
     def stuff(self, line, line_num=0) -> subprocess.CompletedProcess:
         """Sends a line of text to process standard input.
         This uses the screen command 'stuff'. The line number is used only for log messages."""
-        if not self.launched or self.finished():
+        if not self.launched() or self.finished():
             raise ScreenStateException(str(self))
         thread_id = threading.current_thread().ident
         # note: it is important for 'stuff' command that line has terminal newline char
@@ -225,16 +242,17 @@ class ScreenRunnable(object):
         if not self.finished():
             _log.warning("kill() not implemented; you may have a stray process lying around")
 
-    def await_output(self, poll_interval: float=1.0, max_polls=60, requirement:Optional[Callable]=None, on_timeout='return'):
+    def await_output(self, poll_config, requirement:Optional[Callable]=None, on_timeout='return'):
+        # TODO figure out if we can watch the screenlog file with some native capability, instead of polling
         num_polls = 0
         if requirement is None:
             requirement = str.strip  # returns Truthy if text contains non-whitespace
         text = None
-        while num_polls < max_polls:
+        while num_polls < poll_config.limit:
             text = self.logfile_text(True) or ''
             if requirement(text):
                 return
-            time.sleep(poll_interval)
+            time.sleep(poll_config.interval)
             num_polls += 1
         if on_timeout == 'raise':
             raise TimeoutError()
@@ -246,7 +264,7 @@ class ScreenRunnable(object):
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
-    def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS, log_input=False, stuff_mode='auto', args=None):
+    def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS, log_input=False, stuff_mode='auto', await_config: PollConfig=None, args=None):
         self.executable = executable
         self.pause_duration = pause_duration
         self.log_input = log_input
@@ -256,7 +274,7 @@ class TestCaseRunner(object):
         self.strict_check = False
         self.processing_timeout: float = 5.0
         self.send_eof = False
-        self.await_output_before_stuff = False
+        self.await_config = await_config
 
     def _pause(self, duration=None):
         time.sleep(self.pause_duration if duration is None else duration)
@@ -313,27 +331,27 @@ class TestCaseRunner(object):
             # we could use -Logfile filename to make this more stable
             procdef = ProcessDefinition(self.executable, self.args or [], tempdir, test_case.env_dict())
             screener = ScreenRunnable(procdef, self.stuff_mode, self.log_input)
-            screener_thread = threading.Thread(target=screener)
-            screener_thread.start()
-            _log.debug("[%s] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
-                       None if input_file is None else os.path.basename(input_file))
-            try:
-                if self.await_output_before_stuff:
-                    screener.await_output(poll_interval=0.25, max_polls=10)
-                for i, line in enumerate(input_lines):
-                    self._pause()
-                    proc = screener.stuff(line, i + 1)
-                    if proc.returncode != 0:
-                        actual_text_ = screener.logfile_text(ignore_failure=True)
-                        return make_outcome(False, expected_text, actual_text_, "stuff")
-                if self.send_eof:
-                    screener.stuff_eof()
-                _log.debug("[%s] waiting %s seconds for process to terminate", thread_id, self.processing_timeout)
-                screener_thread.join(self.processing_timeout)
-            finally:
-                if not screener.quit():
-                    if screener_thread.is_alive():
-                        screener.kill()
+            with screener.start():
+                self._pause(self.pause_duration * 2)
+                _log.debug("[%s] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
+                           None if input_file is None else os.path.basename(input_file))
+                try:
+                    if self.await_config is not None:
+                        screener.await_output(self.await_config)
+                    for i, line in enumerate(input_lines):
+                        self._pause()
+                        proc = screener.stuff(line, i + 1)
+                        if proc.returncode != 0:
+                            actual_text_ = screener.logfile_text(ignore_failure=True)
+                            return make_outcome(False, expected_text, actual_text_, "stuff")
+                    if self.send_eof:
+                        screener.stuff_eof()
+                    _log.debug("[%s] waiting %s seconds for process to terminate", thread_id, self.processing_timeout)
+                    screener.await_proc(self.processing_timeout)
+                finally:
+                    if not screener.quit():
+                        if not screener.finished():
+                            screener.kill()
             output = screener.logfile_text(ignore_failure=False)
             if screener.completed_proc is not None and screener.completed_proc.returncode != 0:
                 return make_outcome(False, expected_text, output, f"screen -D -m {self.executable} exit code {screener.completed_proc.returncode}")
@@ -407,7 +425,7 @@ def matches(filter_pattern: Optional[str], test_case: Tuple[Optional[str], str])
 
 
 def check_cpp(cpp_file: str, concurrency_level: int, pause_duration: float, max_test_cases:int, log_input: bool, 
-              filter_pattern: str, report_type: str, stuff_mode: str, await_output_before_stuff: bool):
+              filter_pattern: str, report_type: str, stuff_mode: str, await_interval: float):
     q_dir = os.path.dirname(cpp_file)
     q_name = os.path.basename(q_dir)
     q_executable = os.path.join(q_dir, 'cmake-build', q_name)
@@ -416,8 +434,10 @@ def check_cpp(cpp_file: str, concurrency_level: int, pause_duration: float, max_
     _log.info("%s: detected %s test cases", q_name, len(test_case_files))
     if not test_case_files:
         return
-    runner = TestCaseRunner(q_executable, pause_duration, log_input, stuff_mode)
-    runner.await_output_before_stuff = await_output_before_stuff
+    await_config = None
+    if await_interval is not None:
+        await_config = PollConfig(await_interval, 10)
+    runner = TestCaseRunner(q_executable, pause_duration, log_input, stuff_mode, await_config)
     outcomes = {}
     threads: List[threading.Thread] = []
     concurrency_mgr = ConcurrencyManager(runner, concurrency_level, q_name, outcomes)
@@ -491,7 +511,7 @@ def main():
     parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
     parser.add_argument("--test-cases", metavar="MODE", choices=_TEST_CASES_CHOICES, help=f"test case generation mode; choices are {_TEST_CASES_CHOICES}; default 'auto' means attempt to re-generate")
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
-    parser.add_argument("--await", action='store_true', help="await text on process output stream before sending anything")
+    parser.add_argument("--await", type=float, metavar="INTERVAL", help="poll with specified interval for text on process output stream before sending input")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:
