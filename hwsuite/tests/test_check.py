@@ -6,6 +6,7 @@ import tempfile
 from unittest import TestCase
 from hwsuite import check
 import hwsuite.tests
+from hwsuite.check import StuffConfig, Throttle
 
 
 hwsuite.tests.configure_logging()
@@ -75,8 +76,7 @@ baz=gaw""")
 class TestCaseRunnerTest(TestCase):
 
     def test_run_test_case_pass(self):
-        t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
-        t.send_eof = True
+        t = check.TestCaseRunner('xargs', Throttle.default(), StuffConfig('auto', True))
         with tempfile.TemporaryDirectory() as tempdir:
             input_file = os.path.join(tempdir, 'input.txt')
             expected_file = os.path.join(tempdir, 'expected.txt')
@@ -84,7 +84,7 @@ class TestCaseRunnerTest(TestCase):
                 ofile.write("1\n2\n")
             with open(expected_file, 'w') as ofile:
                 ofile.write("1\nfoo 1\n2\nfoo 2\n")
-            outcome = t.run_test_case(check.TestCase.create(input_file, expected_file))
+            outcome = t.run_test_case(check.TestCase.create(input_file, expected_file, args=['-n1', 'echo', 'foo']))
         print(outcome)
         self.assertTrue(outcome.passed)
 
@@ -107,8 +107,8 @@ class TestCaseRunnerTest(TestCase):
             expected_file = os.path.join(tempdir, 'expected.txt')
             with open(expected_file, 'w') as ofile:
                 ofile.write(expected_text)
-            t = check.TestCaseRunner('cat', args=[any_file])
-            return t.run_test_case(check.TestCase.create(None, expected_file))
+            t = check.TestCaseRunner('cat', Throttle.default(), StuffConfig.default())
+            return t.run_test_case(check.TestCase.create(None, expected_file, args=[any_file]))
 
     def test_run_test_case_tabs(self):
         cat_text = "A\tB\tC\n"
@@ -126,8 +126,8 @@ class TestCaseRunnerTest(TestCase):
             expected_file = os.path.join(tempdir, 'expected.txt')
             with open(expected_file, 'w') as ofile:
                 ofile.write("bar\n")
-            t = check.TestCaseRunner('bash', args=['-c', 'echo $FOO'])
-            outcome = t.run_test_case(check.TestCase.create(None, expected_file, {'FOO': 'bar'}))
+            t = check.TestCaseRunner('bash', Throttle.default(), StuffConfig.default())
+            outcome = t.run_test_case(check.TestCase.create(None, expected_file, {'FOO': 'bar'}, ['-c', 'echo $FOO']))
         print(outcome)
         self.assertTrue(outcome.passed)
 
