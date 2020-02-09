@@ -64,7 +64,7 @@ class TestCase(NamedTuple):
     @staticmethod
     def create(input_file: Optional[str], expected_file: str, env: Optional[Dict[str, str]]=None, args: Optional[Sequence[str]]=None):
         env = None if env is None else frozenset(env.items())
-        args = args or tuple(args)
+        args = tuple() if args is None else tuple(args)
         return TestCase(input_file, expected_file, env, args)
 
 
@@ -423,21 +423,27 @@ class ConcurrencyManager(object):
         self.runner = runner
         self.outcomes_lock = threading.Lock()
 
+    def _run_test_case(self, test_case: TestCase) -> TestCaseOutcome:
+        return self.runner.run_test_case(test_case)
+
     def perform(self, test_case: TestCase, outcomes: Dict[TestCase, TestCaseOutcome], q_name:str=None, i:int=0):
         """Runs a test case and puts the outcome in the given dictionary.
 
         The q_name and i parameters are only used for log messages."""
-        input_file, expected_file, env = test_case
-        self.concurrer.acquire()
         try:
-            outcome = self.runner.run_test_case(test_case)
-            input_name = os.path.basename(input_file)
-            if outcome.passed:
-                _log.debug("%s: case %s (%s) passed", q_name, i + 1, input_name)
-            else:
-                _log.info("%s: case %s (%s) failed: %s", q_name, i + 1, input_name, outcome.message)
-        finally:
-            self.concurrer.release()
+            self.concurrer.acquire()
+            try:
+                outcome = self._run_test_case(test_case)
+                input_name = os.path.basename(test_case.input_file)
+                if outcome.passed:
+                    _log.debug("%s: case %s (%s) passed", q_name, i + 1, input_name)
+                else:
+                    _log.info("%s: case %s (%s) failed: %s", q_name, i + 1, input_name, outcome.message)
+            finally:
+                self.concurrer.release()
+        except Exception as e:
+            _log.warning("unhandled exception running test case: %s %s", type(e).__name__, e)
+            outcome = TestCaseOutcome(False, '<unknown>', test_case, '', '', f"unhandled: {type(e).__name__} {e}")
         self.outcomes_lock.acquire()
         try:
             outcomes[test_case] = outcome
@@ -520,6 +526,7 @@ class CppChecker(object):
             t.join()
         if not threads:
             _log.warning("all test cases were skipped")
+        assert len(threads) == len(outcomes), "not all threads returned an outcome: {} threads but {} outcomes".format(len(threads), len(outcomes))
         return outcomes
 
 

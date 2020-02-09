@@ -3,11 +3,11 @@ import argparse
 import logging
 import os
 import tempfile
+import threading
 from unittest import TestCase
 from hwsuite import check
 import hwsuite.tests
-from hwsuite.check import StuffConfig, Throttle
-
+from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome
 
 hwsuite.tests.configure_logging()
 
@@ -61,17 +61,42 @@ baz=gaw""")
 
     def test__derive_counterparts(self):
         test_cases = [
-            ('/path/to/dir/expected-outputABC.txt', 'inputABC.txt', 'envABC.txt'),
-            ('/path/to/dir/expected-output-ABC.txt', 'input-ABC.txt', 'env-ABC.txt'),
-            ('/path/to/dir/expected-output01.txt', 'input01.txt', 'env01.txt'),
-            ('/path/to/dir/1-expected.txt', '1-input.txt', '1-env.txt'),
-            ('/path/to/dir/def-expected-output.txt', 'def-input.txt', 'def-env.txt'),
+            ('/path/to/dir/expected-outputABC.txt', 'inputABC.txt', 'envABC.txt', 'argsABC.txt'),
+            ('/path/to/dir/expected-output-ABC.txt', 'input-ABC.txt', 'env-ABC.txt', 'args-ABC.txt'),
+            ('/path/to/dir/expected-output01.txt', 'input01.txt', 'env01.txt', 'args01.txt'),
+            ('/path/to/dir/1-expected.txt', '1-input.txt', '1-env.txt', '1-args.txt'),
+            ('/path/to/dir/def-expected-output.txt', 'def-input.txt', 'def-env.txt', 'def-args.txt'),
         ]
-        for argpath, inbase, envbase in test_cases:
+        for argpath, inbase, envbase, argsbase in test_cases:
             with self.subTest():
                 actual = check._derive_counterparts(argpath, True)
-                self.assertTupleEqual((inbase, envbase), actual)
+                self.assertTupleEqual((inbase, envbase, argsbase), actual)
 
+
+class UnitTestConcurrencyManager(ConcurrencyManager):
+
+    def _run_test_case(self, test_case: TestCase) -> TestCaseOutcome:
+        return TestCaseOutcome(True, 'true', test_case, 'hello, world', 'hello, world', 'fake')  # fabricate outcome
+
+
+class ConcurrencyManagerTest(TestCase):
+
+    def test_perform(self):
+        mgr = UnitTestConcurrencyManager(TestCaseRunner('true', Throttle.default(), StuffConfig.default()), 4)
+        sample_cases = [
+            check.TestCase.create('foo', 'bar'),
+            check.TestCase.create('baz', 'gaw'),
+            check.TestCase.create('gee', 'hab'),
+            check.TestCase.create('har', 'jeb'),
+            check.TestCase.create('kee', 'koh'),
+            check.TestCase.create('lun', 'lum'),
+        ]
+        outcomes = {}
+        for test_case in sample_cases:
+            mgr.perform(test_case, outcomes)
+        self.assertEqual(len(sample_cases), len(outcomes))
+        for outcome in outcomes.values():
+            self.assertEqual('fake', outcome.message)
 
 class TestCaseRunnerTest(TestCase):
 
