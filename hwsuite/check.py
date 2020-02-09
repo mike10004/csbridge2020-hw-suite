@@ -264,7 +264,8 @@ class ScreenRunnable(object):
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
-    def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS, log_input=False, stuff_mode='auto', await_config: PollConfig=None, args=None):
+    def __init__(self, executable, pause_duration=_DEFAULT_PAUSE_DURATION_SECONDS,
+                 log_input=False, stuff_mode='auto', await_config: PollConfig=None, args=None):
         self.executable = executable
         self.pause_duration = pause_duration
         self.log_input = log_input

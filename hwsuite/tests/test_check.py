@@ -74,7 +74,7 @@ baz=gaw""")
 
 class TestCaseRunnerTest(TestCase):
 
-    def test_run_test_case(self):
+    def test_run_test_case_pass(self):
         t = check.TestCaseRunner('xargs', args=['-n1', 'echo', 'foo'])
         t.send_eof = True
         with tempfile.TemporaryDirectory() as tempdir:
@@ -88,32 +88,38 @@ class TestCaseRunnerTest(TestCase):
         print(outcome)
         self.assertTrue(outcome.passed)
 
-    def test_run_test_case_no_input(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            any_file = os.path.join(tempdir, 'text.txt')
-            with open(any_file, 'w') as ofile:
-                ofile.write("This is my story\n")
-            expected_file = os.path.join(tempdir, 'expected.txt')
-            with open(expected_file, 'w') as ofile:
-                ofile.write("This is my story\n")
-            t = check.TestCaseRunner('cat', args=[any_file])
-            outcome = t.run_test_case(check.TestCase.create(None, expected_file))
+    def test_run_test_case_no_input_pass(self):
+        outcome = self._do_test_run_test_case_no_input("This is my story\n", "This is my story\n")
         print(outcome)
         self.assertTrue(outcome.passed)
 
-    def test_run_test_case_tabs(self):
+    def test_run_test_case_no_input_fail(self):
+        outcome = self._do_test_run_test_case_no_input("This is my story\n", "This is not my story\n")
+        print(outcome)
+        self.assertFalse(outcome.passed)
+
+    # noinspection PyMethodMayBeStatic
+    def _do_test_run_test_case_no_input(self, input_text, expected_text) -> check.TestCaseOutcome:
         with tempfile.TemporaryDirectory() as tempdir:
             any_file = os.path.join(tempdir, 'text.txt')
-            cat_text = "A\tB\tC\n"
             with open(any_file, 'w') as ofile:
-                ofile.write(cat_text)
+                ofile.write(input_text)
             expected_file = os.path.join(tempdir, 'expected.txt')
             with open(expected_file, 'w') as ofile:
-                ofile.write(cat_text)
+                ofile.write(expected_text)
             t = check.TestCaseRunner('cat', args=[any_file])
-            outcome = t.run_test_case(check.TestCase.create(None, expected_file))
-        print(outcome)
+            return t.run_test_case(check.TestCase.create(None, expected_file))
+
+    def test_run_test_case_tabs(self):
+        cat_text = "A\tB\tC\n"
+        outcome = self._do_test_run_test_case_no_input(cat_text, cat_text)
         self.assertTrue(outcome.passed)
+
+    def test_run_test_case_tabs_fail(self):
+        cat_text = "A\tB\tC\n"
+        bad_text = "A\tC\tB\n"
+        outcome = self._do_test_run_test_case_no_input(cat_text, bad_text)
+        self.assertFalse(outcome.passed)
 
     def test_run_test_case_env(self):
         with tempfile.TemporaryDirectory() as tempdir:
