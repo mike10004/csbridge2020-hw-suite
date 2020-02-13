@@ -24,7 +24,7 @@ class Builder(object):
     def build(self, source_dir, build_dir, build_type='Debug', target_name=None):
         self.do_cmake_magic(source_dir, build_dir, build_type)
         if target_name is None:
-            target_name = os.path.basename(source_dir)
+            target_name = 'all'
         self.do_make(build_dir, target_name)
 
     def do_cmake_magic(self, source_dir, build_dir, build_type):
