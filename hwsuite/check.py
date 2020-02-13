@@ -171,7 +171,7 @@ class PollConfig(NamedTuple):
 
     @staticmethod
     def from_args_await(args: argparse.Namespace, limit: int=10) -> 'PollConfig':
-        interval = get_arg(args, 'await', None)
+        interval = get_arg(args, 'await_interval', None)
         if interval is None:
             return PollConfig.disabled()
         return PollConfig(interval, limit)
@@ -187,7 +187,7 @@ class LogWatcher(object):
         req = self.requirement or str.strip
         return req(text)
 
-    def await_output(self, poll_config, on_timeout='return'):
+    def await_output(self, poll_config: PollConfig, on_timeout='return'):
         num_polls = 0
         text = None
         while num_polls < poll_config.limit:
@@ -327,7 +327,7 @@ class ScreenRunnableFactory(object):
 class Throttle(NamedTuple):
 
     pause_duration: float
-    await: PollConfig
+    await_config: PollConfig
     processing_timeout: float
 
     @staticmethod
@@ -398,7 +398,7 @@ class TestCaseRunner(object):
                 _log.debug("[%s] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
                            None if input_file is None else os.path.basename(input_file))
                 try:
-                    LogWatcher(screener.logfile).await_output(self.throttle.await)
+                    LogWatcher(screener.logfile).await_output(self.throttle.await_config)
                     for i, line in enumerate(input_lines):
                         self._pause()
                         proc = screener.stuff(line, self.stuff_config, i + 1)
@@ -610,7 +610,7 @@ def main():
     parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
     parser.add_argument("--test-cases", metavar="MODE", choices=_TEST_CASES_CHOICES, help=f"test case generation mode; choices are {_TEST_CASES_CHOICES}; default 'auto' means attempt to re-generate")
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
-    parser.add_argument("--await", type=float, metavar="INTERVAL", help="poll with specified interval for text on process output stream before sending input")
+    parser.add_argument("--await-interval", type=float, metavar="INTERVAL", help="poll with specified interval for text on process output stream before sending input")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:

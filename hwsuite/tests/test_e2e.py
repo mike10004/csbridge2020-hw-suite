@@ -52,7 +52,7 @@ int main() {
                     [-4, 1, -3],
                 ]
             })
-            check_args = _create_check_namespace(project_dir=proj_dir, subdirs=[], report='repr', await=True)
+            check_args = _create_check_namespace(project_dir=proj_dir, subdirs=[], report='repr', await=0.2)
             ecode = hwsuite.check._main(check_args)
             self.assertEqual(0, ecode, "check exit code")
             ecode = hwsuite.question._main(q_args)
