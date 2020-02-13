@@ -229,13 +229,14 @@ class StuffConfig(NamedTuple):
 # noinspection PyMethodMayBeStatic
 class ScreenRunnable(object):
 
-    def __init__(self, procdef: ProcessDefinition, executable: str):
+    def __init__(self, procdef: ProcessDefinition, screen_executable: str):
         self.procdef = procdef
         self.case_id = str(uuid.uuid4())
         self.started_proc: Optional[subprocess.Popen] = None
         self.completed_proc: Optional[subprocess.CompletedProcess] = None
         self.logfile = os.path.join(self.procdef.cwd, 'screenlog.0')
-        self.executable = executable
+        self.screen_executable = screen_executable
+        assert screen_executable
 
     def __str__(self):
         return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
@@ -245,7 +246,7 @@ class ScreenRunnable(object):
 
     def start(self):
         # TODO use -Logfile filename to make this more stable
-        cmd = ['screen', '-L', '-S', self.case_id, '-D', '-m', '--'] + self.procdef.to_cmd()
+        cmd = [self.screen_executable, '-L', '-S', self.case_id, '-D', '-m', '--'] + self.procdef.to_cmd()
         self.started_proc = subprocess.Popen(cmd, env=self.procdef.env, cwd=self.procdef.cwd, stdout=PIPE, stderr=PIPE)
         return self.started_proc
 
@@ -268,7 +269,7 @@ class ScreenRunnable(object):
         # note: it is important for 'stuff' command that line has terminal newline char
         line = cfg.format_line(line)
         _log.debug("[%s] feeding line %s to process: %s", thread_id, line_num, repr(line))
-        proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)
+        proc = subprocess.run([self.screen_executable, '-S', self.case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)
         if proc.returncode != 0:
             stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
             msg = f"[{thread_id}] stuff exit code {proc.returncode} feeding line {line_num}; stderr={stderr}; stdout={stdout}"
@@ -276,7 +277,7 @@ class ScreenRunnable(object):
         return proc
 
     def stuff_eof(self) -> subprocess.CompletedProcess:
-        proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', "^D"], stdout=PIPE, stderr=PIPE)
+        proc = subprocess.run([self.screen_executable, '-S', self.case_id, '-X', 'stuff', "^D"], stdout=PIPE, stderr=PIPE)
         if proc.returncode != 0:
             _log.info("sending EOF to process failed with code %s", proc.returncode)
         return proc
@@ -290,7 +291,7 @@ class ScreenRunnable(object):
         if self.finished():
             return True
         _log.debug("quitting screen process")
-        exitcode = subprocess.call(['screen', '-S', self.case_id, '-X', 'quit'], stdout=DEVNULL, stderr=DEVNULL)
+        exitcode = subprocess.call([self.screen_executable, '-S', self.case_id, '-X', 'quit'], stdout=DEVNULL, stderr=DEVNULL)
         if not self.finished and exitcode != 0:  # there's a race here and we may not know the proc finished but it did and 'quit' returned error, but there are no ill effects and it's pretty rare
             _log.warning("screen 'quit' failed with code %s", exitcode)
         return exitcode == 0
