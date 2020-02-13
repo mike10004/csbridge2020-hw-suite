@@ -52,7 +52,9 @@ def _cmd(cmd_list, err_msg="Command Line Error", allow_nonzero_exit=False) -> st
 def find_proj_root(cwd=None, cfg_filename=CFG_FILENAME):
     cwd = os.path.abspath(cwd or os.getcwd())
     proj_root = cwd
-    while not os.path.exists(os.path.join(proj_root, cfg_filename)) and proj_root != '/':
+    prev_dir = None
+    while not os.path.exists(os.path.join(proj_root, cfg_filename)) and proj_root != '/' and prev_dir != proj_root:
+        prev_dir = proj_root
         proj_root = os.path.dirname(proj_root)
     if os.path.exists(os.path.join(proj_root, cfg_filename)):
         return proj_root
