@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from typing import Dict
 
 _log = logging.getLogger(__name__)
 
@@ -10,6 +11,15 @@ ENV_LOG_LEVEL = 'UNIT_TEST_LOG_LEVEL'
 
 _logging_configured = False
 
+
+def _load_config(update_me: Dict=None):
+    if update_me is None:
+        update_me = {}
+    config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+    if os.path.exists(config_file):
+        with open(config_file, 'r') as ifile:
+            update_me.update(json.load(ifile))
+    return update_me
 
 def _parse_log_level(level_str: str):
     log_level = None
@@ -26,13 +36,10 @@ def configure_logging():
     global _logging_configured
     if _logging_configured:
         return
-    config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
     cfg = {}
     env_val = os.getenv(ENV_LOG_LEVEL)
     cfg['log_level'] = env_val
-    if os.path.exists(config_file):
-        with open(config_file, 'r') as ifile:
-            cfg.update(json.load(ifile))
+    _load_config(cfg)
     log_level_str = cfg.get('log_level', 'INFO')
     log_level = _parse_log_level(log_level_str)
     logging.basicConfig(level=log_level)
@@ -40,4 +47,5 @@ def configure_logging():
 
 
 def get_config():
-    return {}
+    # TODO cache config instance
+    return _load_config()

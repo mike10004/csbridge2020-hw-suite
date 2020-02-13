@@ -21,7 +21,7 @@ import time
 from hwsuite import testcases
 from subprocess import PIPE, DEVNULL
 from argparse import ArgumentParser
-from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet, Generator, Callable, Sequence
+from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet, Generator, Callable, Sequence, Any
 import hwsuite.build
 
 
@@ -229,12 +229,13 @@ class StuffConfig(NamedTuple):
 # noinspection PyMethodMayBeStatic
 class ScreenRunnable(object):
 
-    def __init__(self, procdef):
+    def __init__(self, procdef: ProcessDefinition, executable: str):
         self.procdef = procdef
         self.case_id = str(uuid.uuid4())
         self.started_proc: Optional[subprocess.Popen] = None
         self.completed_proc: Optional[subprocess.CompletedProcess] = None
         self.logfile = os.path.join(self.procdef.cwd, 'screenlog.0')
+        self.executable = executable
 
     def __str__(self):
         return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
@@ -311,6 +312,17 @@ class ScreenRunnable(object):
         return read_file_text(self.logfile, ignore_failure)
 
 
+class ScreenRunnableFactory(object):
+
+    def __init__(self, cfg: Dict[str, Any]):
+        self.cfg = cfg
+        assert cfg is not None
+
+    def create(self, procdef: ProcessDefinition):
+        screen_exec = hwsuite.resolve_executable('screen', self.cfg)
+        return ScreenRunnable(procdef, screen_exec)
+
+
 class Throttle(NamedTuple):
 
     pause_duration: float
@@ -325,13 +337,13 @@ class Throttle(NamedTuple):
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
-    def __init__(self, executable, throttle: Throttle, stuff_config: StuffConfig):
+    def __init__(self, executable, throttle: Throttle, stuff_config: StuffConfig, screen_factory: ScreenRunnableFactory):
         self.executable = executable
         self.throttle = throttle
         assert isinstance(throttle, Throttle)
         self.stuff_config = stuff_config
         assert isinstance(stuff_config, StuffConfig)
-        self.processing_timeout: float = 5.0
+        self.screen_factory = screen_factory
 
     def _pause(self, duration=None):
         time.sleep(self.throttle.pause_duration if duration is None else duration)
@@ -379,7 +391,7 @@ class TestCaseRunner(object):
         thread_id = threading.current_thread().ident
         with tempfile.TemporaryDirectory() as tempdir:
             procdef = ProcessDefinition(self.executable, test_case.args, tempdir, test_case.env_dict())
-            screener = ScreenRunnable(procdef)
+            screener = self.screen_factory.create(procdef)
             with screener.start():
                 self._pause(self.throttle.pause_duration * 2)
                 _log.debug("[%s] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
@@ -408,12 +420,13 @@ class TestCaseRunner(object):
 
 class TestCaseRunnerFactory(object):
 
-    def __init__(self, throttle: Throttle, stuff_config: StuffConfig):
+    def __init__(self, throttle: Throttle, stuff_config: StuffConfig, screen_factory: ScreenRunnableFactory):
         self.stuff_config = stuff_config
         self.throttle = throttle
+        self.screen_factory = screen_factory
 
     def create(self, executable: str):
-        return TestCaseRunner(executable, self.throttle, self.stuff_config)
+        return TestCaseRunner(executable, self.throttle, self.stuff_config, self.screen_factory)
 
 
 class ConcurrencyManager(object):
@@ -542,6 +555,7 @@ def review_outcomes(outcomes: Dict[TestCase, TestCaseOutcome], report_type, q_na
 
 def _main(args: argparse.Namespace):
     proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
+    cfg = hwsuite.get_config(proj_root=proj_dir)
     _log.debug("this project dir is %s (specified %s)", proj_dir, args.project_dir)
     assert proj_dir and os.path.isdir(proj_dir), "failed to detect project directory"
     _log.debug("building executables by running build in %s", proj_dir)
@@ -565,7 +579,8 @@ def _main(args: argparse.Namespace):
     throttle = Throttle(args.pause, await_config, _DEFAULT_PROCESSING_TIMEOUT_SECONDS)
     stuff_config = StuffConfig.from_args(args)
     test_cases_config = TestCasesConfig(args.max_cases, args.filter)
-    runner_factory = TestCaseRunnerFactory(throttle, stuff_config)
+    screen_factory = ScreenRunnableFactory(cfg)
+    runner_factory = TestCaseRunnerFactory(throttle, stuff_config, screen_factory)
     for i, cpp_file in enumerate(sorted(main_cpps)):
         if args.test_cases != 'existing':
             defs_file = os.path.join(os.path.dirname(cpp_file), 'test-cases.json')

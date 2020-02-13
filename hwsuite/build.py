@@ -47,9 +47,10 @@ class Builder(object):
         return Builder(cmake, make)
 
 
-def build(proj_root, build_dir=None, builder=None, build_type='Debug'):
+def build(proj_root, build_dir=None, builder=None, build_type='Debug', cfg=None):
     #  "$CMAKE" -DCMAKE_BUILD_TYPE=Debug -S "${THIS_DIR}" -B "${BUILD_DIR}"
-    cfg = hwsuite.get_config(proj_root=proj_root)
+    if cfg is None:
+        cfg = hwsuite.get_config(proj_root=proj_root)
     source_dir = proj_root
     build_dir = build_dir or os.path.join(source_dir, hwsuite.BUILD_DIR_BASENAME)
     builder = builder or Builder.from_config(cfg)

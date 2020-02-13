@@ -24,6 +24,11 @@ def _create_namespace(**kwargs) -> argparse.Namespace:
     return check_args
 
 
+def screen_factory() -> hwsuite.check.ScreenRunnableFactory:
+    cfg = hwsuite.tests.get_config()
+    return hwsuite.check.ScreenRunnableFactory(cfg)
+
+
 class ModuleTest(TestCase):
 
     def test__read_env(self):
@@ -82,7 +87,7 @@ class UnitTestConcurrencyManager(ConcurrencyManager):
 class ConcurrencyManagerTest(TestCase):
 
     def test_perform(self):
-        mgr = UnitTestConcurrencyManager(TestCaseRunner('true', Throttle.default(), StuffConfig.default()), 4)
+        mgr = UnitTestConcurrencyManager(TestCaseRunner('true', Throttle.default(), StuffConfig.default(), screen_factory()), 4)
         sample_cases = [
             check.TestCase.create('foo', 'bar'),
             check.TestCase.create('baz', 'gaw'),
@@ -101,7 +106,7 @@ class ConcurrencyManagerTest(TestCase):
 class TestCaseRunnerTest(TestCase):
 
     def test_run_test_case_pass(self):
-        t = check.TestCaseRunner('xargs', Throttle.default(), StuffConfig('auto', True))
+        t = check.TestCaseRunner('xargs', Throttle.default(), StuffConfig('auto', True), screen_factory())
         with tempfile.TemporaryDirectory() as tempdir:
             input_file = os.path.join(tempdir, 'input.txt')
             expected_file = os.path.join(tempdir, 'expected.txt')
@@ -132,7 +137,7 @@ class TestCaseRunnerTest(TestCase):
             expected_file = os.path.join(tempdir, 'expected.txt')
             with open(expected_file, 'w') as ofile:
                 ofile.write(expected_text)
-            t = check.TestCaseRunner('cat', Throttle.default(), StuffConfig.default())
+            t = check.TestCaseRunner('cat', Throttle.default(), StuffConfig.default(), screen_factory())
             return t.run_test_case(check.TestCase.create(None, expected_file, args=[any_file]))
 
     def test_run_test_case_tabs(self):
@@ -151,7 +156,7 @@ class TestCaseRunnerTest(TestCase):
             expected_file = os.path.join(tempdir, 'expected.txt')
             with open(expected_file, 'w') as ofile:
                 ofile.write("bar\n")
-            t = check.TestCaseRunner('bash', Throttle.default(), StuffConfig.default())
+            t = check.TestCaseRunner('bash', Throttle.default(), StuffConfig.default(), screen_factory())
             outcome = t.run_test_case(check.TestCase.create(None, expected_file, {'FOO': 'bar'}, ['-c', 'echo $FOO']))
         print(outcome)
         self.assertTrue(outcome.passed)
