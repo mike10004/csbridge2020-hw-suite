@@ -18,13 +18,14 @@ _DEFAULT_MAKE = 'make'
 
 class Builder(object):
 
-    def __init__(self, cmake:str=_DEFAULT_CMAKE, make:str=_DEFAULT_MAKE):
+    def __init__(self, cmake:str=_DEFAULT_CMAKE):
         self.cmake = cmake
-        self.make = make
 
-    def build(self, source_dir, build_dir, build_type='Debug'):
+    def build(self, source_dir, build_dir, build_type='Debug', target_name=None):
         self.do_cmake_magic(source_dir, build_dir, build_type)
-        self.do_make(build_dir)
+        if target_name is None:
+            target_name = os.path.basename(source_dir)
+        self.do_make(build_dir, target_name)
 
     def do_cmake_magic(self, source_dir, build_dir, build_type):
         proc = subprocess.run([self.cmake, '-DCMAKE_BUILD_TYPE=' + build_type, '-S', source_dir, '-B', build_dir], stdout=PIPE, stderr=PIPE)
@@ -35,16 +36,17 @@ class Builder(object):
         if proc.returncode != 0:
             raise CommandException.from_proc(proc)
 
-    def do_make(self, build_dir):
-        proc = subprocess.run([self.make], cwd=build_dir, stdout=PIPE, stderr=PIPE)
+    def do_make(self, build_dir, target_name):
+        cmd = [self.cmake, '--build', build_dir, '--target', target_name, '--', '-j', '2']
+        _log.debug("cmake second stage: %s", cmd)
+        proc = subprocess.run(args=cmd, stdout=PIPE, stderr=PIPE)
         self.check_proc(proc)
         _log.debug("make complete in %s", build_dir)
 
     @staticmethod
     def from_config(cfg: Dict[str, Any]) -> 'Builder':
         cmake = hwsuite.resolve_executable('cmake', cfg)
-        make = hwsuite.resolve_executable('make', cfg)
-        return Builder(cmake, make)
+        return Builder(cmake)
 
 
 def build(proj_root, build_dir=None, builder=None, build_type='Debug', cfg=None):
@@ -53,7 +55,8 @@ def build(proj_root, build_dir=None, builder=None, build_type='Debug', cfg=None)
         cfg = hwsuite.get_config(proj_root=proj_root)
     source_dir = proj_root
     build_dir = build_dir or os.path.join(source_dir, hwsuite.BUILD_DIR_BASENAME)
-    builder = builder or Builder.from_config(cfg)
+    if builder is None:
+        builder = Builder.from_config(cfg)
     builder.build(source_dir, build_dir, build_type=build_type)
 
 
