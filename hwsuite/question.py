@@ -115,20 +115,25 @@ class Questioner(object):
         _log.debug("appended subdirectory line to %s", root_cmakelists_file)
 
 
-def _main(args: argparse.Namespace) -> int:
-    proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
-    questioner = Questioner(proj_dir)
-    q_name = args.name if args.name is not None else questioner.detect_next_qname()
+def create(questioner: Questioner, q_name: str, mode: str) -> int:
     if os.path.isabs(q_name):
         raise ValueError("'name' should be basename or relative path, not an absolute path")
-    q_dir = os.path.join(proj_dir, q_name)
-    if args.mode == 'replace' and os.path.exists(q_dir):
+    q_dir = os.path.join(questioner.proj_dir, q_name)
+    if mode == 'replace' and os.path.exists(q_dir):
         shutil.rmtree(q_dir)
-    os.makedirs(q_dir, exist_ok=(args.mode == 'overwrite'))
+    os.makedirs(q_dir, exist_ok=(mode == 'overwrite'))
     questioner.populate(q_dir)
     questioner.config_root_proj(q_name)
     _log.info("%s created", hwsuite.describe_path(q_dir))
     return 0
+
+
+def _main(args: argparse.Namespace) -> int:
+    proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
+    questioner = Questioner(proj_dir)
+    q_name = args.name if args.name is not None else questioner.detect_next_qname()
+    return create(questioner, q_name, args.mode)
+
 
 def main():
     parser = ArgumentParser()

@@ -37,3 +37,7 @@ def configure_logging():
     log_level = _parse_log_level(log_level_str)
     logging.basicConfig(level=log_level)
     _logging_configured = True
+
+
+def get_config():
+    return {}

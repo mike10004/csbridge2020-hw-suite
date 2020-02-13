@@ -100,3 +100,8 @@ def describe_path(pathname):
     relpath = os.path.relpath(pathname)
     abspath = os.path.abspath(pathname)
     return relpath if len(relpath) < len(abspath) else abspath
+
+
+def resolve_executable(exec_name, cfg: dict):
+    val = cfg.get('executables', {}).get(exec_name, None)
+    return val if val else exec_name

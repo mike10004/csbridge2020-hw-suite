@@ -23,6 +23,8 @@ test-cases/
 *.pyc
 """
 
+_SAFETY_MODE_CHOICES = ('ignore', 'cautious', 'overwrite')
+
 
 class AlreadyInitializedException(hwsuite.MessageworthyException):
     pass
@@ -40,6 +42,8 @@ def init_file(pathname: str, safety_mode: str, contents: str, write_mode='w'):
 
 
 def do_init(proj_dir, project_name, safety_mode, cfg_filename=hwsuite.CFG_FILENAME) -> int:
+    if safety_mode not in _SAFETY_MODE_CHOICES:
+        raise ValueError(f"invalid safety mode; must be one of {_SAFETY_MODE_CHOICES}")
     os.makedirs(proj_dir, exist_ok=True)
     cfg_pathname = os.path.join(proj_dir, cfg_filename)
     init_file(cfg_pathname, safety_mode, '')
@@ -56,7 +60,7 @@ def main():
     parser = argparse.ArgumentParser()
     hwsuite.add_logging_options(parser)
     parser.add_argument("project_dir", nargs='?', help="directory to initialize (if not $PWD)")
-    parser.add_argument("--safety", metavar='MODE', choices=('ignore', 'cautious', 'overwrite'), default='ignore',
+    parser.add_argument("--safety", metavar='MODE', choices=_SAFETY_MODE_CHOICES, default='ignore',
                         help="what to do if project files already exist; one of 'ignore', 'abort', or 'overwrite'")
     parser.add_argument("--name", default='hw', help="set CMake project name")
     args = parser.parse_args()
