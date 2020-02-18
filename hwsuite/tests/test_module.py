@@ -40,3 +40,16 @@ class ModuleMethodsTest(TestCase):
             hwsuite.store_config(cfg, proj_root=proj_root)
             cfg = hwsuite.get_config(proj_root=proj_root)
             self.assertDictEqual({'foo': 'bar'}, cfg)
+
+    def test_describe_path(self):
+        test_cases = [
+            (os.path.join(os.getcwd(), 'foo'), None, False, 'foo'),
+            ('/a/b/c', '/a/b', False, 'c'),
+            ('/a/b/c', '/d/e/f', False, '/a/b/c'),
+            ('/a/b/c', '/a/b/c', True, 'current directory'),
+            ('/a/b/c', '/a/b/c', False, '.',)
+        ]
+        for pathname, start, decorate, expected in test_cases:
+            with self.subTest():
+                actual = hwsuite.describe_path(pathname, start, decorate=decorate)
+                self.assertEqual(expected, actual, f"expect describe_path({repr(pathname)}, {repr(start)}, {repr(decorate)} = {repr(expected)} but it is {repr(actual)}")

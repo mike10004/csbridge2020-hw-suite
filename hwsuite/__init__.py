@@ -96,7 +96,12 @@ def add_logging_options(parser: argparse.ArgumentParser):
                         help=f"set log level to one of {_LOG_LEVEL_CHOICES}")
 
 
-def describe_path(pathname):
-    relpath = os.path.relpath(pathname)
+def describe_path(pathname, cwd=None, decorate=False):
+    relpath = os.path.relpath(pathname, start=cwd)
     abspath = os.path.abspath(pathname)
-    return relpath if len(relpath) < len(abspath) else abspath
+    if len(relpath) < len(abspath):
+        if decorate and relpath == '.':
+            return 'current directory'
+        return relpath
+    else:
+        return abspath
