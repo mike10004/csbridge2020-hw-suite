@@ -576,7 +576,8 @@ def _main(args: argparse.Namespace):
                 testcases.produce_from_defs(defs_file)
         cpp_checker = CppChecker(runner_factory, num_threads)
         outcomes = cpp_checker.check_cpp(cpp_file, test_cases_config)
-        per_cpp_failures = review_outcomes(outcomes, report_type=args.report)
+        q_name = os.path.basename(os.path.dirname(cpp_file))
+        per_cpp_failures = review_outcomes(outcomes, report_type=args.report, q_name=q_name)
         total_failures += per_cpp_failures
     return 0 if total_failures == 0 else _ERR_TEST_CASE_FAILURES
 
