@@ -82,7 +82,7 @@ def _read_env(env_file) -> Dict[str, str]:
 
 
 def _derive_counterparts(expected_pathname, suppress_deprecation=False) -> Tuple[str, str, str]:
-    """Returns a tuple of basenames of the input and env file counterparts to the given expected output file pathname."""
+    """Returns a tuple of basenames of the input, env, and args file counterparts to the given expected output file pathname."""
     basename = os.path.basename(expected_pathname)
     def _derive(token, suffix):
         if suffix:
@@ -91,7 +91,9 @@ def _derive_counterparts(expected_pathname, suppress_deprecation=False) -> Tuple
         else:
             identifier = basename[len(token):]
             return 'input' + identifier, 'env' + identifier, 'args' + identifier
-    if basename.endswith("-expected.txt"):
+    if basename == 'expected.txt':
+        return 'input.txt', 'env.txt', 'args.txt'
+    elif basename.endswith("-expected.txt"):
         return _derive("-expected.txt", True)
     elif basename.endswith("-expected-output.txt", True):
         return _derive("-expected-output.txt", True)
@@ -124,7 +126,7 @@ def detect_test_case_files(q_dir: str) -> List[TestCase]:
     test_cases = []
     for root, dirs, files in os.walk(q_dir):
         for f in files:
-            if f.startswith('expected-output') or f.endswith('-expected.txt') or f.endswith('-expected-output.txt'):
+            if f.startswith('expected-output') or f.endswith('-expected.txt') or f.endswith('-expected-output.txt') or f == 'expected.txt':
                 test_case = _create_test_case(os.path.join(root, f))
                 test_cases.append(test_case)
     return sorted(test_cases)
@@ -207,14 +209,20 @@ def get_arg(args: argparse.Namespace, attr_name: str, default_value):
     except AttributeError:
         return default_value
 
+_BAD_STUFF_CHARS = "^#"
+
 class StuffConfig(NamedTuple):
 
     mode: str
     eof: bool
 
     def format_line(self, line: str) -> str:
-        if self.mode == 'auto' and line[-1] != "\n":
-            line += "\n"
+        if self.mode == 'auto':
+            for ch in _BAD_STUFF_CHARS:
+                if ch in line:
+                    raise ValueError(f"input line contains characters that may not be compatible with screen `stuff` command: {repr(line)} has {repr(ch)}")
+            if line[-1] != "\n":
+                line += "\n"
         return line
 
     @staticmethod

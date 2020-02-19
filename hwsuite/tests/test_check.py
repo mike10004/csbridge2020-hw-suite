@@ -26,6 +26,21 @@ def _create_namespace(**kwargs) -> argparse.Namespace:
 
 class ModuleTest(TestCase):
 
+    def test_detect_test_case_files(self):
+        with tempfile.TemporaryDirectory() as proj_root:
+            q_dir = os.path.join(proj_root, 'q3')
+            os.makedirs(q_dir)
+            expected_file = os.path.join(q_dir, 'expected.txt')
+            with open(expected_file, 'wb') as ofile:
+                ofile.write(b'')
+            test_cases = check.detect_test_case_files(q_dir)
+            self.assertEqual(1, len(test_cases))
+            test_case = test_cases[0]
+            self.assertEqual(expected_file, test_case.expected_file)
+            self.assertIsNone(test_case.input_file)
+            self.assertIsNone(test_case.env)
+            self.assertTupleEqual(tuple(), test_case.args)
+
     def test__read_env(self):
         with tempfile.TemporaryDirectory() as tempdir:
             env_file = os.path.join(tempdir, 'env.txt')
