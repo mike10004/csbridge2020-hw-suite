@@ -139,11 +139,11 @@ class TestCaseRunnerTest(TestCase):
         self.assertFalse(outcome.passed)
 
     # noinspection PyMethodMayBeStatic
-    def _do_test_run_test_case_no_input(self, input_text, expected_text) -> check.TestCaseOutcome:
+    def _do_test_run_test_case_no_input(self, cat_text, expected_text) -> check.TestCaseOutcome:
         with tempfile.TemporaryDirectory() as tempdir:
             any_file = os.path.join(tempdir, 'text.txt')
             with open(any_file, 'w') as ofile:
-                ofile.write(input_text)
+                ofile.write(cat_text)
             expected_file = os.path.join(tempdir, 'expected.txt')
             with open(expected_file, 'w') as ofile:
                 ofile.write(expected_text)

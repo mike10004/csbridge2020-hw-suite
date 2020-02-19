@@ -13,6 +13,7 @@ import re
 import sys
 import logging
 import threading
+import traceback
 import uuid
 import tempfile
 import os.path
@@ -438,11 +439,14 @@ class ConcurrencyManager(object):
         """Runs a test case and puts the outcome in the given dictionary.
 
         The q_name and i parameters are only used for log messages."""
+        if test_case.input_file is None:
+            input_name = None
+        else:
+            input_name = os.path.basename(test_case.input_file)
         try:
             self.concurrer.acquire()
             try:
                 outcome = self._run_test_case(test_case)
-                input_name = os.path.basename(test_case.input_file)
                 if outcome.passed:
                     _log.debug("%s: case %s (%s) passed", q_name, i + 1, input_name)
                 else:
@@ -450,7 +454,10 @@ class ConcurrencyManager(object):
             finally:
                 self.concurrer.release()
         except Exception as e:
-            _log.warning("unhandled exception running test case: %s %s", type(e).__name__, e)
+            _log.warning("%s: case %s (%s) unhandled exception: %s %s", q_name, i + 1, input_name, type(e).__name__, e)
+            exc_info = sys.exc_info()
+            info = traceback.format_exception(*exc_info)
+            _log.debug("%s: case %s (%s) traceback:\n%s", q_name, i + 1, input_name, "".join(info).strip())
             outcome = TestCaseOutcome(False, '<unknown>', test_case, '', '', f"unhandled: {type(e).__name__} {e}")
         self.outcomes_lock.acquire()
         try:
@@ -462,7 +469,10 @@ class ConcurrencyManager(object):
 def report(outcomes: List[TestCaseOutcome], report_type: str, ofile=sys.stderr):
     for outcome in outcomes:
         q_name = os.path.basename(outcome.executable)
-        input_name = os.path.basename(outcome.test_case.input_file)
+        if outcome.test_case.input_file is None:
+            input_name = None
+        else:
+            input_name = os.path.basename(outcome.test_case.input_file)
         print(f"{q_name}: {input_name}: {outcome.message}")
         if outcome.message == 'diff':
             if report_type == 'diff':
