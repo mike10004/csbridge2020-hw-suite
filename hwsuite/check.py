@@ -591,7 +591,7 @@ def _main(args: argparse.Namespace):
                 if args.test_cases == 'require':
                     raise FileNotFoundError(defs_file)
             else:
-                testcases.produce_from_defs(defs_file)
+                testcases.produce_from_defs(defs_file, onerror='raise')
         cpp_checker = CppChecker(runner_factory, num_threads)
         outcomes = cpp_checker.check_cpp(cpp_file, test_cases_config)
         q_name = os.path.basename(os.path.dirname(cpp_file))

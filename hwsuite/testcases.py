@@ -98,7 +98,7 @@ class ParameterSource(NamedTuple):
         return ParameterSource(input_text_template, expected_text_template, test_cases, precision)
 
 
-def write_cases(param_source: ParameterSource, dest_dir: str, suffix=".txt"):
+def write_cases(param_source: ParameterSource, dest_dir: str, suffix=".txt", onerror='continue'):
     nsuccesses = 0
     for i, test_case in enumerate(param_source.test_cases):
         try:
@@ -116,6 +116,8 @@ def write_cases(param_source: ParameterSource, dest_dir: str, suffix=".txt"):
                 ofile.write(param_source.render_expected_text(test_case))
             nsuccesses += 1
         except Exception:
+            if onerror == 'raise':
+                raise
             exc_info = sys.exc_info()
             info = traceback.format_exception(*exc_info)
             _log.debug("writing cases: exception traceback:\n%s", "".join(info).strip())
@@ -142,12 +144,12 @@ def find_all_definitions_files(top_dir: str, filename: str) -> List[str]:
     return defs_files
 
 
-def produce_from_defs(defs_file: str, dest_dirname: str = 'test-cases') -> ParameterSource:
+def produce_from_defs(defs_file: str, dest_dirname: str = 'test-cases', onerror='continue') -> ParameterSource:
     with open(defs_file, 'r') as ifile:
         model = json.load(ifile)
     param_source = ParameterSource.load(model, os.path.dirname(defs_file))
     dest_dir = os.path.join(os.path.dirname(defs_file), dest_dirname)
-    write_cases(param_source, dest_dir)
+    write_cases(param_source, dest_dir, onerror=onerror)
     return param_source
 
 
