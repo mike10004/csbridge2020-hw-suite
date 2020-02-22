@@ -38,22 +38,57 @@ def clean(stage_dir: str):
         _log.info("%s directories and %s files deleted", ndirs, nfiles)
 
 
-def _should_remove(line) -> bool:
-    return re.search(r'//\s*stage:\s*remove(\s+.*)?$', line) is not None
+def _is_cut_any(line) -> bool:
+    return re.search(r'//\s*stage:\s*(remove|cut)(\s+.*)?$', line, flags=re.IGNORECASE) is not None
+
+
+def _is_cut_start(line: str) -> bool:
+    return re.search(r'//\s*stage:\s*(remove|cut)\s+start(\s+.*)?$', line, flags=re.IGNORECASE) is not None
+
+
+def _is_cut_stop(line: str) -> bool:
+    return re.search(r'//\s*stage:\s*(remove|cut)\s+stop(\s+.*)?$', line, flags=re.IGNORECASE) is not None
+
+
+def _is_in_remove_block(all_lines: List[str], line_index: int) -> bool:
+    # look backward until you find a cut start or cut stop line; if cut stop, then FALSE; if cut start, then...
+    # look foward until you find a cut start or cut stop; if cut stop, then TRUE, if cut start or never found, then ERROR
+    if _is_cut_any(all_lines[line_index]):
+        return True
+    after_cut_start = False
+    for i in reversed(range(0, line_index)):
+        line = all_lines[i]
+        if _is_cut_stop(line):
+            return False
+        if _is_cut_start(line):
+            after_cut_start = True
+            break
+    if after_cut_start:
+        for i in range(line_index + 1, len(all_lines)):
+            line = all_lines[i]
+            if _is_cut_stop(line):
+                return True
+        raise ValueError("cut stop never found")
+    return False
 
 
 def _transfer(src_file, dst_file) -> str:
     """Copy src_file to dst_file, removing lines marked for removal, and return the text written."""
     with open(src_file, 'r') as ifile:
         src_lines = [line for line in ifile]
-    good_lines = []
-    for line in src_lines:
-        if not _should_remove(line):
-            good_lines.append(line)
+    good_lines = _transfer_lines(src_lines)
     with open(dst_file, 'w') as ofile:
         for line in good_lines:
             ofile.write(line)
     return ''.join(good_lines)
+
+
+def _transfer_lines(src_lines: List[str]) -> List[str]:
+    good_lines = []
+    for idx, line in enumerate(src_lines):
+        if not _is_cut_any(line) and not _is_in_remove_block(src_lines, idx):
+            good_lines.append(line)
+    return good_lines
 
 
 def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[str]=None, cfg: dict=None, default_stage_dir_basename='stage', no_clean=False) -> int:
