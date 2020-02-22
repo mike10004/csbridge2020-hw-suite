@@ -68,6 +68,11 @@ class TestCase(NamedTuple):
         args = tuple() if args is None else tuple(args)
         return TestCase(input_file, expected_file, env, args)
 
+    # noinspection PyMethodMayBeStatic
+    def check_exit_code(self, exit_code: int) -> bool:
+        """Return True iff the exit code is what is expected for this test case."""
+        return exit_code == 0
+
 
 def _read_env(env_file) -> Dict[str, str]:
     env = {}
@@ -334,13 +339,14 @@ class Throttle(NamedTuple):
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
-    def __init__(self, executable, throttle: Throttle, stuff_config: StuffConfig):
+    def __init__(self, executable, throttle: Throttle, stuff_config: StuffConfig, require_screen = 'auto'):
         self.executable = executable
         self.throttle = throttle
         assert isinstance(throttle, Throttle)
         self.stuff_config = stuff_config
         assert isinstance(stuff_config, StuffConfig)
         self.processing_timeout: float = 5.0
+        self.require_screen = require_screen
 
     def _pause(self, duration=None):
         time.sleep(self.throttle.pause_duration if duration is None else duration)
@@ -370,8 +376,20 @@ class TestCaseRunner(object):
                     return to_outcome(True, expected_text_, actual_text, "ok")
         return to_outcome(False, expected_text, actual_text, "diff")
 
+    def _is_use_screen(self, test_case: TestCase):
+        if self.require_screen == 'never':
+            return False
+        if self.require_screen == 'always':
+            return True
+        # 'auto'
+        return test_case.input_file is not None
+
+
     def run_test_case(self, test_case: TestCase) -> TestCaseOutcome:
+        thread_id = threading.current_thread().ident
+        use_screen = self._is_use_screen(test_case)
         input_file = test_case.input_file
+        _log.debug("[%x] use_screen=%s for require_screen=%s and input=%s (test case %x)", thread_id, use_screen, self.require_screen, None if input_file is None else os.path.basename(input_file), hash(test_case))
         expected_file = test_case.expected_file
         expected_text = read_file_text(expected_file)
 
@@ -385,44 +403,53 @@ class TestCaseRunner(object):
             input_lines = []
         else:
             input_lines = read_file_lines(input_file)
-        thread_id = threading.current_thread().ident
         with tempfile.TemporaryDirectory() as tempdir:
             procdef = ProcessDefinition(self.executable, test_case.args, tempdir, test_case.env_dict())
-            screener = ScreenRunnable(procdef)
-            with screener.start():
-                self._pause(self.throttle.pause_duration * 2)
-                _log.debug("[%s] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
-                           None if input_file is None else os.path.basename(input_file))
-                try:
-                    LogWatcher(screener.logfile).await_output(self.throttle.await)
-                    for i, line in enumerate(input_lines):
-                        self._pause()
-                        proc = screener.stuff(line, self.stuff_config, i + 1)
-                        if proc.returncode != 0:
-                            actual_text_ = screener.logfile_text(ignore_failure=True)
-                            return make_outcome(False, expected_text, actual_text_, "stuff")
-                    if self.stuff_config.eof:
-                        screener.stuff_eof()
-                    _log.debug("[%s] waiting %s seconds for process to terminate", thread_id, self.throttle.processing_timeout)
-                    screener.await_proc(self.throttle.processing_timeout)
-                finally:
-                    if not screener.quit():
-                        if not screener.finished():
-                            screener.kill()
-            output = screener.logfile_text(ignore_failure=False)
-            if screener.completed_proc is not None and screener.completed_proc.returncode != 0:
-                return make_outcome(False, expected_text, output, f"screen -D -m {self.executable} exit code {screener.completed_proc.returncode}")
+            if use_screen:
+                screener = ScreenRunnable(procdef)
+                with screener.start():
+                    self._pause(self.throttle.pause_duration * 2)
+                    _log.debug("[%x] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
+                               None if input_file is None else os.path.basename(input_file))
+                    try:
+                        LogWatcher(screener.logfile).await_output(self.throttle.await)
+                        for i, line in enumerate(input_lines):
+                            self._pause()
+                            proc = screener.stuff(line, self.stuff_config, i + 1)
+                            if proc.returncode != 0:
+                                actual_text_ = screener.logfile_text(ignore_failure=True)
+                                return make_outcome(False, expected_text, actual_text_, "stuff")
+                        if self.stuff_config.eof:
+                            screener.stuff_eof()
+                        _log.debug("[%x] waiting %s seconds for process to terminate", thread_id, self.throttle.processing_timeout)
+                        screener.await_proc(self.throttle.processing_timeout)
+                    finally:
+                        if not screener.quit():
+                            if not screener.finished():
+                                screener.kill()
+                output = screener.logfile_text(ignore_failure=False)
+                if screener.completed_proc is not None and screener.completed_proc.returncode != 0:
+                    return make_outcome(False, expected_text, output, f"screen -D -m {self.executable} exit code {screener.completed_proc.returncode}")
+            else:
+                # if we don't need to send/capture input, then we can just execute
+                cmd = [self.executable] + list(test_case.args)
+                completed_proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, cwd=tempdir, env=test_case.env_dict())
+                output = completed_proc.stdout.decode('utf8')
+                # TODO log stderr
+                if not test_case.check_exit_code(completed_proc.returncode):
+                    return make_outcome(False, expected_text, output, f"unexpected exit code {completed_proc.returncode}")
         return check(output)
 
 
 class TestCaseRunnerFactory(object):
 
-    def __init__(self, throttle: Throttle, stuff_config: StuffConfig):
+    def __init__(self, throttle: Throttle, stuff_config: StuffConfig, require_screen: str = 'auto'):
         self.stuff_config = stuff_config
         self.throttle = throttle
+        self.require_screen = require_screen
 
     def create(self, executable: str):
-        return TestCaseRunner(executable, self.throttle, self.stuff_config)
+        return TestCaseRunner(executable, self.throttle, self.stuff_config, self.require_screen)
 
 
 class ConcurrencyManager(object):
@@ -583,7 +610,7 @@ def _main(args: argparse.Namespace):
     throttle = Throttle(args.pause, await_config, _DEFAULT_PROCESSING_TIMEOUT_SECONDS)
     stuff_config = StuffConfig.from_args(args)
     test_cases_config = TestCasesConfig(args.max_cases, args.filter)
-    runner_factory = TestCaseRunnerFactory(throttle, stuff_config)
+    runner_factory = TestCaseRunnerFactory(throttle, stuff_config, args.require_screen)
     for i, cpp_file in enumerate(sorted(main_cpps)):
         if args.test_cases != 'existing':
             defs_file = os.path.join(os.path.dirname(cpp_file), 'test-cases.json')
@@ -614,6 +641,7 @@ def main():
     parser.add_argument("--test-cases", metavar="MODE", choices=_TEST_CASES_CHOICES, help=f"test case generation mode; choices are {_TEST_CASES_CHOICES}; default 'auto' means attempt to re-generate")
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
     parser.add_argument("--await", type=float, metavar="INTERVAL", help="poll with specified interval for text on process output stream before sending input")
+    parser.add_argument("--require-screen", choices=('auto', 'always', 'never'), default='auto', help="how to decide whether to use `screen` to run executable; default is 'auto', which means only when input is to be sent to process")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:
