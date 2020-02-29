@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-
+import json
 import os
 import argparse
 import sys
+from typing import Dict, Any
 
 import hwsuite
 import logging
@@ -43,12 +44,12 @@ def init_file(pathname: str, safety_mode: str, contents: str, write_mode='w'):
         ofile.write(contents)
 
 
-def do_init(proj_dir, project_name, safety_mode, cfg_filename=hwsuite.CFG_FILENAME) -> int:
+def do_init(proj_dir: str, safety_mode: str, hwconfig: Dict[str, Any], cfg_filename=hwsuite.CFG_FILENAME) -> int:
     os.makedirs(proj_dir, exist_ok=True)
     cfg_pathname = os.path.join(proj_dir, cfg_filename)
-    init_file(cfg_pathname, safety_mode, '')
+    init_file(cfg_pathname, safety_mode, json.dumps(hwconfig, indent=2))
     cmakelists_pathname = os.path.join(proj_dir, 'CMakeLists.txt')
-    cmakelists_text = _ROOT_CMAKELISTS_TXT_TEMPLATE.format(project_name=project_name)
+    cmakelists_text = _ROOT_CMAKELISTS_TXT_TEMPLATE.format(project_name=hwconfig.get('name', 'hw'))
     init_file(cmakelists_pathname, safety_mode, cmakelists_text)
     gitignore_pathname = os.path.join(proj_dir, '.gitignore')
     # ignore safety mode for gitignore; if you already have it, then you have a git repo where you can undo changes
@@ -64,11 +65,20 @@ def main():
     parser.add_argument("--safety", metavar='MODE', choices=_SAFETY_MODES, default=_DEFAULT_SAFETY_MODE,
                         help="what to do if project files already exist; one of 'ignore', 'abort', or 'overwrite'")
     parser.add_argument("--name", default='hw', help="set CMake project name")
+    parser.add_argument("--author", help="set author (for main.cpp template)")
     args = parser.parse_args()
     try:
         hwsuite.configure_logging(args)
         proj_dir = args.project_dir or os.getcwd()
-        return do_init(proj_dir, args.name, args.safety)
+        q_model = {
+            'project_name': args.name,
+        }
+        hwconfig = {
+            'question_model': q_model
+        }
+        if args.author is not None:
+            q_model['author'] = args.author
+        return do_init(proj_dir, args.safety, hwconfig)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
         return 1

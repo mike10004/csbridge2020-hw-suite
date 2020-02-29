@@ -33,7 +33,7 @@ add_executable({q_name} main.cpp)
 
 _MAINCPP_TEMPLATE = """\
 // {author}
-// Question {n}
+// {project_name} question {n}
 
 #include <iostream>
 
