@@ -8,20 +8,9 @@ from unittest import TestCase
 from pathlib import Path
 from hwsuite import stage
 import logging
-
+from hwsuite.tests import touch_all
 
 _log = logging.getLogger(__name__)
-
-
-def _touch_all(parent, relative_paths: List[str]):
-    for relpath in relative_paths:
-        abspath = os.path.join(parent, relpath)
-        if abspath.endswith('/'):  # depends on Posix-like file separator char
-            os.makedirs(abspath, exist_ok=True)
-        else:
-            os.makedirs(os.path.dirname(abspath), exist_ok=True)
-            path = Path(abspath)
-            path.touch()
 
 
 class StageTest(TestCase):
@@ -38,7 +27,7 @@ q3/question.md
 """
         with tempfile.TemporaryDirectory() as tempdir:
             Path(os.path.join(tempdir, '.hwconfig.json')).touch()
-            _touch_all(tempdir, fs_structure.split())
+            touch_all(tempdir, fs_structure.split())
             prefix = 'abc123_hw_'
             nstaged = stage.stage(tempdir, prefix)
             self.assertEqual(2, nstaged)

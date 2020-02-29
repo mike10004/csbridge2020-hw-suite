@@ -8,6 +8,7 @@ import hwsuite.question
 import hwsuite.check
 from argparse import Namespace
 from hwsuite.tests.test_check import _create_namespace as _create_check_namespace
+from hwsuite.tests import write_text_file
 
 
 class EndToEndTest(TestCase):
@@ -17,8 +18,7 @@ class EndToEndTest(TestCase):
             json.dump(test_cases_def, ofile, indent=2)
 
     def _write_cpp(self, q_dir: str, source_code: str):
-        with open(os.path.join(q_dir, 'main.cpp'), 'w') as ofile:
-            ofile.write(source_code)
+        write_text_file(source_code, os.path.join(q_dir, 'main.cpp'))
 
     def test_do_homework(self):
         with tempfile.TemporaryDirectory() as tempdir:

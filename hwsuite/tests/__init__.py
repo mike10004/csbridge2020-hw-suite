@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
+from typing import List
 
 _log = logging.getLogger(__name__)
 
@@ -20,6 +22,27 @@ def _parse_log_level(level_str: str):
             print(f"{ENV_LOG_LEVEL}={level_str} is not a valid log level", file=sys.stderr)
     return log_level or logging.INFO
 
+
+def write_text_file(content: str, pathname:str) -> str:
+    with open(pathname, 'w') as ofile:
+        ofile.write(content)
+    return pathname
+
+
+def read_file_lines(pathname: str) -> List[str]:
+    with open(pathname, 'r') as ifile:
+        return [line for line in ifile]
+
+
+def touch_all(parent, relative_paths: List[str]):
+    for relpath in relative_paths:
+        abspath = os.path.join(parent, relpath)
+        if abspath.endswith('/'):  # depends on Posix-like file separator char
+            os.makedirs(abspath, exist_ok=True)
+        else:
+            os.makedirs(os.path.dirname(abspath), exist_ok=True)
+            path = Path(abspath)
+            path.touch()
 
 
 def configure_logging():

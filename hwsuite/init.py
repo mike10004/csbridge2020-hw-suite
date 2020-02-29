@@ -16,22 +16,26 @@ project({project_name})
 """
 
 _GITIGNORE_TEXT = """\
+
 cmake-build*/
 /stage/
 __pycache__/
 test-cases/
 *.pyc
 """
-
+_SAFETY_MODES = ('ignore', 'cautious', 'overwrite')
+_DEFAULT_SAFETY_MODE = 'ignore'
 
 class AlreadyInitializedException(hwsuite.MessageworthyException):
     pass
 
 
 def init_file(pathname: str, safety_mode: str, contents: str, write_mode='w'):
+    if safety_mode not in _SAFETY_MODES:
+        raise ValueError(f"safety_mode must be one of {_SAFETY_MODES}")
     if os.path.exists(pathname):
         _log.debug("already exists: %s (mode=%s)", pathname, safety_mode)
-        if safety_mode == 'abort':
+        if safety_mode == 'cautious':
             raise AlreadyInitializedException(f"already exists: {pathname}")
         if safety_mode == 'ignore':
             return
@@ -47,7 +51,8 @@ def do_init(proj_dir, project_name, safety_mode, cfg_filename=hwsuite.CFG_FILENA
     cmakelists_text = _ROOT_CMAKELISTS_TXT_TEMPLATE.format(project_name=project_name)
     init_file(cmakelists_pathname, safety_mode, cmakelists_text)
     gitignore_pathname = os.path.join(proj_dir, '.gitignore')
-    init_file(gitignore_pathname, safety_mode, _GITIGNORE_TEXT, write_mode='a')
+    # ignore safety mode for gitignore; if you already have it, then you have a git repo where you can undo changes
+    init_file(gitignore_pathname, 'overwrite', _GITIGNORE_TEXT, write_mode='a')
     _log.info("%s initialized", hwsuite.describe_path(proj_dir))
     return 0
 
@@ -56,7 +61,7 @@ def main():
     parser = argparse.ArgumentParser()
     hwsuite.add_logging_options(parser)
     parser.add_argument("project_dir", nargs='?', help="directory to initialize (if not $PWD)")
-    parser.add_argument("--safety", metavar='MODE', choices=('ignore', 'cautious', 'overwrite'), default='ignore',
+    parser.add_argument("--safety", metavar='MODE', choices=_SAFETY_MODES, default=_DEFAULT_SAFETY_MODE,
                         help="what to do if project files already exist; one of 'ignore', 'abort', or 'overwrite'")
     parser.add_argument("--name", default='hw', help="set CMake project name")
     args = parser.parse_args()
