@@ -599,8 +599,11 @@ def _main(args: argparse.Namespace):
         _log.debug("searching %s for main.cpp files", proj_dir)
         for root, dirs, files in os.walk(proj_dir):
             for f in files:
-                if f == 'main.cpp' and not os.path.exists(os.path.join(root, '.nocheck')):
-                    main_cpps.append(os.path.join(root, f))
+                if f == 'main.cpp':
+                    if os.path.exists(os.path.join(root, '.nocheck')):
+                        _log.info("skipping %s because of .nocheck file", os.path.basename(root))
+                    else:
+                        main_cpps.append(os.path.join(root, f))
     if not main_cpps:
         _log.error("no main.cpp files found")
         return 1
