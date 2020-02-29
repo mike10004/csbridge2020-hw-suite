@@ -15,7 +15,7 @@ import hwsuite
 
 
 _log = logging.getLogger(__name__)
-
+_DEFAULT_MODE = 'safe'
 _QUESTIONMD_TEMPLATE = """\
 # Question {n}
 
@@ -115,26 +115,31 @@ class Questioner(object):
         _log.debug("appended subdirectory line to %s", root_cmakelists_file)
 
 
-def _main(args: argparse.Namespace) -> int:
-    proj_dir = os.path.abspath(args.project_dir or hwsuite.find_proj_root())
+def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE):
+    proj_dir = os.path.abspath(proj_dir or hwsuite.find_proj_root())
     questioner = Questioner(proj_dir)
-    q_name = args.name if args.name is not None else questioner.detect_next_qname()
+    q_name = q_name if q_name is not None else questioner.detect_next_qname()
     if os.path.isabs(q_name):
         raise ValueError("'name' should be basename or relative path, not an absolute path")
     q_dir = os.path.join(proj_dir, q_name)
-    if args.mode == 'replace' and os.path.exists(q_dir):
+    if mode == 'replace' and os.path.exists(q_dir):
         shutil.rmtree(q_dir)
-    os.makedirs(q_dir, exist_ok=(args.mode == 'overwrite'))
+    os.makedirs(q_dir, exist_ok=(mode == 'overwrite'))
     questioner.populate(q_dir)
     questioner.config_root_proj(q_name)
     _log.info("%s created", hwsuite.describe_path(q_dir))
+
+
+def _main(args: argparse.Namespace) -> int:
+    _main_raw(args.project_dir, args.name, args.mode)
     return 0
+
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("name", nargs='?', help="name of subdirectory, e.g. 'q2'")
     hwsuite.add_logging_options(parser)
-    parser.add_argument("--mode", default='safe', choices=('safe', 'overwrite', 'replace'))
+    parser.add_argument("--mode", default=_DEFAULT_MODE, choices=('safe', 'overwrite', 'replace'))
     parser.add_argument("--project-dir", metavar="DIR", help="project directory; default is working directory")
     args = parser.parse_args()
     hwsuite.configure_logging(args)

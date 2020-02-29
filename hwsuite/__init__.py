@@ -57,7 +57,7 @@ def find_proj_root(cwd=None, cfg_filename=CFG_FILENAME):
     if os.path.exists(os.path.join(proj_root, cfg_filename)):
         return proj_root
     # TODO allow for use programs copied into proj dir
-    raise WhereamiException("this directory is not an ancestor of a hw project; use hwinit to establish a project directory")
+    raise WhereamiException("no ancestor is a hw project root; use hwinit to establish a project directory")
 
 
 def _load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):

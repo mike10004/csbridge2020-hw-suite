@@ -34,15 +34,19 @@ def read_file_lines(pathname: str) -> List[str]:
         return [line for line in ifile]
 
 
-def touch_all(parent, relative_paths: List[str]):
+def touch_all(parent: str, relative_paths: List[str]) -> List[str]:
+    touched = []
     for relpath in relative_paths:
-        abspath = os.path.join(parent, relpath)
-        if abspath.endswith('/'):  # depends on Posix-like file separator char
-            os.makedirs(abspath, exist_ok=True)
+        fullpath = os.path.join(parent, relpath)
+        if fullpath.endswith('/'):  # depends on Posix-like file separator char (not Windows-compatible)
+            os.makedirs(fullpath, exist_ok=True)
+            touched.append(fullpath)
         else:
-            os.makedirs(os.path.dirname(abspath), exist_ok=True)
-            path = Path(abspath)
+            os.makedirs(os.path.dirname(fullpath), exist_ok=True)
+            path = Path(fullpath)
             path.touch()
+            touched.append(str(path))
+    return touched
 
 
 def configure_logging():

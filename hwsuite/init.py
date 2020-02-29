@@ -58,27 +58,31 @@ def do_init(proj_dir: str, safety_mode: str, hwconfig: Dict[str, Any], cfg_filen
     return 0
 
 
+def _main(proj_root, safety_mode: str=_DEFAULT_SAFETY_MODE, name: str=None, author: str=None):
+    q_model = {
+        'project_name': name,
+    }
+    hwconfig = {
+        'question_model': q_model
+    }
+    if author is not None:
+        q_model['author'] = author
+    return do_init(proj_root, safety_mode, hwconfig)
+
+
 def main():
     parser = argparse.ArgumentParser()
     hwsuite.add_logging_options(parser)
-    parser.add_argument("project_dir", nargs='?', help="directory to initialize (if not $PWD)")
+    parser.add_argument("proj_root", nargs='?', help="directory to initialize (if not $PWD)")
     parser.add_argument("--safety", metavar='MODE', choices=_SAFETY_MODES, default=_DEFAULT_SAFETY_MODE,
                         help="what to do if project files already exist; one of 'ignore', 'abort', or 'overwrite'")
     parser.add_argument("--name", default='hw', help="set CMake project name")
     parser.add_argument("--author", help="set author (for main.cpp template)")
     args = parser.parse_args()
+    hwsuite.configure_logging(args)
     try:
-        hwsuite.configure_logging(args)
-        proj_dir = args.project_dir or os.getcwd()
-        q_model = {
-            'project_name': args.name,
-        }
-        hwconfig = {
-            'question_model': q_model
-        }
-        if args.author is not None:
-            q_model['author'] = args.author
-        return do_init(proj_dir, args.safety, hwconfig)
+        proj_root = args.proj_root or os.getcwd()
+        return _main(proj_root)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
         return 1

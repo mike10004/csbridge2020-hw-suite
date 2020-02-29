@@ -45,17 +45,28 @@ def build(proj_root, build_dir=None, builder=None, build_type='Debug'):
     builder.build(source_dir, build_dir, build_type=build_type)
 
 
+class ProjectRootRequiredException(hwsuite.MessageworthyException):
+    pass
+
+
+def _main(proj_root: str=None):
+    if proj_root is None:
+        proj_root = hwsuite.find_proj_root()
+    if not os.path.isfile(os.path.join(proj_root, hwsuite.CFG_FILENAME)):
+        raise ProjectRootRequiredException()
+    build(proj_root)
+    return 0
+
+
 def main():
     parser = ArgumentParser()
     hwsuite.add_logging_options(parser)
-    parser.add_argument("source_root", nargs='?')
+    parser.add_argument("project_dir", nargs='?')
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:
-        proj_root = hwsuite.find_proj_root()
-        source_dir = args.source_root or proj_root
-        build(source_dir)
-        return 0
+        return _main(args.project_dir)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
         return 1
+
