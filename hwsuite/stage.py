@@ -50,6 +50,13 @@ def _is_cut_stop(line: str) -> bool:
     return re.search(r'//\s*stage:\s*(remove|cut)\s+stop(\s+.*)?$', line, flags=re.IGNORECASE) is not None
 
 
+class StageSyntaxException(hwsuite.MessageworthyException):
+    pass
+
+class UnstoppedCutException(StageSyntaxException):
+    pass
+
+
 def _is_in_remove_block(all_lines: List[str], line_index: int) -> bool:
     # look backward until you find a cut start or cut stop line; if cut stop, then FALSE; if cut start, then...
     # look foward until you find a cut start or cut stop; if cut stop, then TRUE, if cut start or never found, then ERROR
@@ -68,8 +75,16 @@ def _is_in_remove_block(all_lines: List[str], line_index: int) -> bool:
             line = all_lines[i]
             if _is_cut_stop(line):
                 return True
-        raise ValueError("cut stop never found")
+        raise UnstoppedCutException("`cut stop` never found")
     return False
+
+
+def _transfer_lines(src_lines: List[str]) -> List[str]:
+    good_lines = []
+    for idx, line in enumerate(src_lines):
+        if not _is_cut_any(line) and not _is_in_remove_block(src_lines, idx):
+            good_lines.append(line)
+    return good_lines
 
 
 def _transfer(src_file, dst_file) -> str:
@@ -81,14 +96,6 @@ def _transfer(src_file, dst_file) -> str:
         for line in good_lines:
             ofile.write(line)
     return ''.join(good_lines)
-
-
-def _transfer_lines(src_lines: List[str]) -> List[str]:
-    good_lines = []
-    for idx, line in enumerate(src_lines):
-        if not _is_cut_any(line) and not _is_in_remove_block(src_lines, idx):
-            good_lines.append(line)
-    return good_lines
 
 
 def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[str]=None, cfg: dict=None, default_stage_dir_basename='stage', no_clean=False) -> int:
@@ -144,7 +151,10 @@ def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[s
         dest_mapping[cpp_file] = dest_pathname
     for src_file, dst_file in dest_mapping.items():
         os.makedirs(os.path.dirname(dst_file), exist_ok=True)
-        _transfer(src_file, dst_file)
+        try:
+            _transfer(src_file, dst_file)
+        except UnstoppedCutException:
+            raise UnstoppedCutException(f"unstopped cut in {src_file}")
         _log.debug("copied %s -> %s", src_file, dst_file)
     return len(dest_mapping)
 
