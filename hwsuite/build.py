@@ -68,5 +68,7 @@ def main():
         return _main(args.project_dir)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
+        if isinstance(ex, ProjectRootRequiredException):
+            parser.error("directory specified must be project root")
         return 1
 
