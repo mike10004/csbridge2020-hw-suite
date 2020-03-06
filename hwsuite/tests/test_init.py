@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import glob
+import json
 import os
 import sys
 import tempfile
@@ -29,3 +30,27 @@ class InitTest(TestCase):
             expected_lines = [line + "\n" for line in (pre_lines + _GITIGNORE_TEXT.strip().split("\n"))]
             actual_lines = hwsuite.tests.read_file_lines(gitignore_file)
             self.assertListEqual(expected_lines, actual_lines)
+
+    def test_config_params_name_and_author(self):
+        args = {
+            'author': 'Rebecca De Mornay',
+            'name': 'hw123'
+        }
+        expected = {
+            'question_model': {
+                'project_name': 'hw123',
+                'author': 'Rebecca De Mornay',
+            }
+        }
+        self._do_test_config_params(args, expected)
+
+    def _do_test_config_params(self, _main_kwargs: dict, expected_config: dict):
+        with tempfile.TemporaryDirectory() as tempdir:
+            proj_root = os.path.join(tempdir, 'my_homework_12')
+            retcode = hwsuite.init._main(proj_root, **_main_kwargs)
+            self.assertEqual(0, retcode)
+            hwconfig_file = os.path.join(proj_root, hwsuite.CFG_FILENAME)
+            with open(hwconfig_file, 'r') as ifile:
+                config = json.load(ifile)
+            self.assertDictEqual(expected_config, config)
+

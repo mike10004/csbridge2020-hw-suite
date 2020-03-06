@@ -59,14 +59,14 @@ def do_init(proj_dir: str, safety_mode: str, hwconfig: Dict[str, Any], cfg_filen
 
 
 def _main(proj_root, safety_mode: str=_DEFAULT_SAFETY_MODE, name: str=None, author: str=None):
-    q_model = {
-        'project_name': name,
-    }
+    q_model = {}
     hwconfig = {
         'question_model': q_model
     }
     if author is not None:
         q_model['author'] = author
+    if name is not None:
+        q_model['project_name'] = name
     return do_init(proj_root, safety_mode, hwconfig)
 
 
@@ -82,7 +82,7 @@ def main():
     hwsuite.configure_logging(args)
     try:
         proj_root = args.proj_root or os.getcwd()
-        return _main(proj_root)
+        return _main(proj_root, safety_mode=args.safety, name=args.name, author=args.author)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
         return 1
