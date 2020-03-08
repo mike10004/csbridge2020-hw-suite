@@ -61,18 +61,31 @@ baz=gaw""")
             }
             self.assertDictEqual(expected, env)
 
-    def test__spaces_to_tabs(self):
-        for text, expected in [
-            ("a  b", "a\tb"),
-            ("a   b", "a\tb"),
-            ("a                           b", "a\tb"),
-            ("a\tb", "a\tb"),
-            ("a b", "a b"),
-            ("a b   c", "a b\tc"),
-        ]:
-            with self.subTest():
-                actual = check._spaces_to_tabs(text)
-                self.assertEqual(expected, actual, f"wrong result on input {repr(text)}")
+    def test__transform_expected(self):
+        text = "a\tb"
+        runner = TestCaseRunner('false', Throttle.default(), StuffConfig.default())
+        actuals = runner._transform_expected(text, "whatever")
+        actuals = list(actuals)
+        self.assertListEqual([text, "a       b"], actuals)
+
+    def test__check_tabs(self):
+        expected_text = """\
+Please enter a line of text:
+  x  * 
+1\twords
+1\tx
+"""
+        actual_text = """\
+Please enter a line of text:
+  x  * 
+1       words
+1       x
+"""
+        runner = TestCaseRunner('false', Throttle.default(), StuffConfig.default())
+        def to_outcome(a, b, c, d):
+            return TestCaseOutcome(a, 'false', hwsuite.check.TestCase.create(None, 'x'), b, c, d)
+        outcome = runner._check(expected_text, actual_text, to_outcome)
+        self.assertTrue(outcome.passed, f"expect passed for {outcome}")
 
     def test__derive_counterparts(self):
         test_cases = [

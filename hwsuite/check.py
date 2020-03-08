@@ -148,11 +148,6 @@ class TestCaseOutcome(NamedTuple):
     message: str
 
 
-def _spaces_to_tabs(text: str) -> str:
-    """Replace sequences of multiple spaces with a single tab character."""
-    return re.sub(r' {2,}', "\t", text)
-
-
 class ProcessDefinition(NamedTuple):
 
     executable: str
@@ -376,30 +371,46 @@ class TestCaseRunner(object):
     def _pause(self, duration=None):
         time.sleep(self.throttle.pause_duration if duration is None else duration)
 
-    def _transform_screenlog(self, actual_text: str, expected_text: str) -> Generator[str, None, None]:
-        """Transforms screenlog text into multiple strings suitable for comparison to expected text.
+    def _transform_expected(self, expected_text: str, actual_text: str) -> List[str]:
+        """Transforms expected text into one or more strings suitable for comparison to actual text.
 
         We always return the original text unchanged as the first element of the returned list.
-        If the expected text has certain characteristics, then additional candidate strings may
+        If the expected or actual text has certain characteristics, then additional candidate strings may
         be appended to the list.
 
         One problem we encounter is a Screen bug wherein tabs are printed as spaces to screenlog.
         See https://serverfault.com/a/278051. To handle that case, if the expected text contains
-        tabs, then a transform is applied the actual text wherein """
-        yield actual_text
+        tabs, then a transform is applied to expand the tabs."""
+        texts = [expected_text]
         if "\t" in expected_text:
-            yield _spaces_to_tabs(actual_text)
+            texts.append(expected_text.expandtabs(8))
+        return texts
+
+    def _transform_actual(self, expected_text: str, actual_text: str) -> List[str]:
+        """Transforms screenlog text into one or more strings suitable for comparison to expected text.
+
+        We always return the original text unchanged as the first element of the returned list.
+        If the expected or actual text has certain characteristics, then additional candidate strings may
+        be appended to the list.
+        """
+        return [actual_text]
 
     def _compare_texts(self, expected, actual) -> bool:
         return expected == actual
 
     def _check(self, expected_text: str, actual_text: str, to_outcome: Callable[[bool, str, str, str], TestCaseOutcome]) -> TestCaseOutcome:
-        expected_texts = [expected_text]
-        for candidate in self._transform_screenlog(actual_text, expected_text):
-            for expected_text_ in expected_texts:
-                if self._compare_texts(candidate, expected_text_):
-                    return to_outcome(True, expected_text_, actual_text, "ok")
-        return to_outcome(False, expected_text, actual_text, "diff")
+        expected_texts = self._transform_expected(expected_text, actual_text)
+        actual_texts = self._transform_actual(expected_text, actual_text)
+        expected_candidate, actual_candidate = None, None
+        num_comparisons = 0
+        for expected_candidate in expected_texts:
+            for actual_candidate in actual_texts:
+                num_comparisons += 1
+                if self._compare_texts(expected_candidate, actual_candidate):
+                    return to_outcome(True, expected_text, actual_text, "ok")
+        _log.debug("no equal texts after %s comparisons", num_comparisons)
+        assert num_comparisons > 0, "BUG: expected or actual text transform produced zero candidates"
+        return to_outcome(False, expected_candidate, actual_candidate, "diff")
 
     def _is_use_screen(self, test_case: TestCase):
         if self.require_screen == 'never':
