@@ -164,10 +164,34 @@ class TestCaseRunnerTest(TestCase):
     def test_run_test_case_env(self):
         with tempfile.TemporaryDirectory() as tempdir:
             expected_file = os.path.join(tempdir, 'expected.txt')
-            with open(expected_file, 'w') as ofile:
-                ofile.write("bar\n")
+            hwsuite.tests.write_text_file("bar\n", expected_file)
             t = check.TestCaseRunner('bash', Throttle.default(), StuffConfig.default())
             outcome = t.run_test_case(check.TestCase.create(None, expected_file, {'FOO': 'bar'}, ['-c', 'echo $FOO']))
         print(outcome)
         self.assertTrue(outcome.passed)
+
+    def test_screen_stuff_special_chars(self):
+        outcome = self.do_test_screen_stuff_special_chars(StuffConfig('auto', True))
+        print(outcome)
+        self.assertTrue(outcome.passed, f"did not pass: {outcome}")
+
+    def test_screen_stuff_special_chars_strict_fail(self):
+        try:
+            self.do_test_screen_stuff_special_chars(StuffConfig('strict', True))
+            self.fail("should have thrown exception")
+        except hwsuite.check.StuffContentException:
+            pass
+
+    # noinspection PyMethodMayBeStatic
+    def do_test_screen_stuff_special_chars(self, stuff_config: StuffConfig) -> TestCaseOutcome:
+        assert stuff_config.eof, "StuffConfig.eof must be True because `cat` likes it"
+        with tempfile.TemporaryDirectory() as tempdir:
+            input_file = os.path.join(tempdir, 'input.txt')
+            text = "caret ^ cool\n"
+            hwsuite.tests.write_text_file(text, input_file)
+            expected_file = os.path.join(tempdir, 'expected.txt')
+            hwsuite.tests.write_text_file(text + text, expected_file)  # text+text because once on stdin, once on stdout
+            t = check.TestCaseRunner('cat', Throttle.default(), stuff_config)
+            outcome = t.run_test_case(check.TestCase.create(input_file, expected_file))
+            return outcome
 

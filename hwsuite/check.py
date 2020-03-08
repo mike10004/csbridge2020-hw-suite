@@ -32,7 +32,7 @@ _DEFAULT_PROCESSING_TIMEOUT_SECONDS = 5
 _REPORT_CHOICES = ('diff', 'full', 'repr', 'none')
 _TEST_CASES_CHOICES = ('auto', 'require', 'existing')
 _ERR_TEST_CASE_FAILURES = 3
-
+_STUFF_MODES = ('auto', 'strict')
 
 def read_file_text(pathname: str, ignore_failure=False) -> Optional[str]:
     """Reads text from a file, possibly ignoring errors.
@@ -217,19 +217,44 @@ def get_arg(args: argparse.Namespace, attr_name: str, default_value):
 
 _BAD_STUFF_CHARS = "^#"
 
+class StuffContentException(ValueError):
+
+    pass
+
 class StuffConfig(NamedTuple):
 
     mode: str
     eof: bool
 
     def format_line(self, line: str) -> str:
+        if not self.mode in _STUFF_MODES:
+            raise ValueError("unrecognized stuff mode")
+        if self.mode == 'strict':
+            if StuffConfig.has_special_chars(line):
+                raise StuffContentException(f"input line contains characters that may not be compatible with screen `stuff` command: {repr(line)} has at least one of {repr(_BAD_STUFF_CHARS)}")
         if self.mode == 'auto':
-            for ch in _BAD_STUFF_CHARS:
-                if ch in line:
-                    raise ValueError(f"input line contains characters that may not be compatible with screen `stuff` command: {repr(line)} has {repr(ch)}")
+            line = StuffConfig.translate_special_chars(line)
             if line[-1] != "\n":
                 line += "\n"
         return line
+
+    @staticmethod
+    def has_special_chars(line: str) -> bool:
+        for ch in _BAD_STUFF_CHARS:
+            if ch in line:
+                return True
+        return False
+
+    @staticmethod
+    def translate_special_chars(line: str) -> str:
+        if not StuffConfig.has_special_chars(line):
+            return line
+        chars = list(line)
+        for i, ch in enumerate(chars):
+            if ch in _BAD_STUFF_CHARS:
+                ch = "\\" + oct(ord(ch))[2:]
+            chars[i] = ch
+        return ''.join(chars)
 
     @staticmethod
     def default():
@@ -640,7 +665,7 @@ def main():
     parser.add_argument("--log-input", help="log feeding of input lines at DEBUG level")
     parser.add_argument("--filter", metavar="PATTERN", help="match test case input filenames against PATTERN")
     parser.add_argument("--report", metavar="ACTION", choices=_REPORT_CHOICES, default='diff', help=f"what to print on test case failure; one of {_REPORT_CHOICES}; default is 'diff'")
-    parser.add_argument("--stuff", metavar="MODE", choices=('auto', 'strict'), default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
+    parser.add_argument("--stuff", metavar="MODE", choices=_STUFF_MODES, default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
     parser.add_argument("--test-cases", metavar="MODE", choices=_TEST_CASES_CHOICES, help=f"test case generation mode; choices are {_TEST_CASES_CHOICES}; default 'auto' means attempt to re-generate")
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
     parser.add_argument("--await", type=float, metavar="INTERVAL", help="poll with specified interval for text on process output stream before sending input")
