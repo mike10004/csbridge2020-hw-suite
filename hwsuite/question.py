@@ -82,6 +82,7 @@ class Questioner(object):
             'q_name': q_name,
             'n': q_name[1:],
             'author': '<author>',
+            'project_name': 'hw'
         }
         model.update(question_model)
         _write_text(template.format(**model), output_file)
