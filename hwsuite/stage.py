@@ -9,7 +9,7 @@ import sys
 import fnmatch
 import logging
 import shutil
-from typing import List
+from typing import List, Optional, Sequence
 import re
 import hwsuite
 
@@ -98,65 +98,94 @@ def _transfer(src_file, dst_file) -> str:
     return ''.join(good_lines)
 
 
-def stage(proj_root: str, prefix: str=None, stage_dir: str=None, subdirs: List[str]=None, cfg: dict=None, default_stage_dir_basename='stage', no_clean=False) -> int:
-    """Stages files and returns number of files staged."""
-    proj_root = os.path.abspath(proj_root)
-    cfg = cfg if cfg is not None else hwsuite.get_config(proj_root=proj_root)
-    assert prefix is None or prefix.strip(), "prefix must contain non-whitespace"
-    if prefix is None:
-        prefix = cfg.get('stage_prefix', None)
-        # TODO detect prefix from git user.email and root CMakeLists.txt project name
-        if prefix is None:
-            raise PrefixNotDefinedException("prefix must be specified if 'stage_prefix' is not defined in .hwconfig.json")
-    else:
-        cfg['stage_prefix'] = prefix
-        hwsuite.store_config(cfg, proj_root=proj_root)
-    if not subdirs:
-        if subdirs is None:
-            subdirs = []
-        for root, dirs, files in os.walk(proj_root):
+class Stager(object):
+
+    def __init__(self, proj_root: str, cfg: dict):
+        self.proj_root = proj_root
+        self.cfg = cfg
+        self.default_stage_dir_basename = 'stage'
+        self.no_clean = False
+
+    def persist_config(self):
+        hwsuite.store_config(self.cfg, proj_root=self.proj_root)
+
+    @staticmethod
+    def create(proj_root: str) -> 'Stager':
+        proj_root = os.path.abspath(proj_root)
+        cfg = hwsuite.get_config(proj_root=proj_root)
+        return Stager(proj_root, cfg)
+
+    def detect_subdirs(self) -> List[str]:
+        subdirs = []
+        for root, dirs, files in os.walk(self.proj_root):
             for direc in dirs:
                 if fnmatch.fnmatch(direc, 'q*'):
                     subdirs.append(os.path.join(root, direc))
             break  # only examine direct descendents
-    _log.debug("drawing cpp files from %s", subdirs)
-    cpp_files_for_staging = []
-    for subdir in subdirs:
-        if os.path.exists(os.path.join(subdir, '.nostage')):
-            _log.debug("skipping %s because .nostage was found", subdir)
-            continue
-        main_cpp = os.path.join(subdir, 'main.cpp')
-        if not os.path.exists(main_cpp):
-            cpp_files = glob.glob(os.path.join(subdir, '*.cpp'))
-            _log.debug("%d .cpp files found in %s", len(cpp_files), subdir)
-            if not cpp_files:
+        return subdirs
+
+    # noinspection PyMethodMayBeStatic
+    def find_cpp_files(self, subdirs: List[str]):
+        _log.debug("drawing cpp files from %s", subdirs)
+        cpp_files_for_staging = []
+        for subdir in subdirs:
+            if os.path.exists(os.path.join(subdir, '.nostage')):
+                _log.debug("skipping %s because .nostage was found", subdir)
                 continue
-            if len(cpp_files) > 1:
-                _log.warning("skipping %s because multiple cpp files found", subdir)
-                continue
-            main_cpp = cpp_files[0]
-        cpp_files_for_staging.append(main_cpp)
-    if not cpp_files_for_staging:
-        _log.warning("zero .cpp files found to stage")
-        return 0
-    stage_dir = os.path.abspath(stage_dir or os.path.join(proj_root, default_stage_dir_basename))
-    if not no_clean and os.path.isdir(stage_dir):
-        clean(stage_dir)
-    dest_mapping = {}
-    for cpp_file in cpp_files_for_staging:
-        dest_pathname = os.path.join(stage_dir, prefix + os.path.basename(os.path.dirname(cpp_file)) + '.cpp')
-        if dest_pathname in dest_mapping.values():
-            _log.warning("name conflict: multiple sources map to %s", dest_pathname)
+            main_cpp = os.path.join(subdir, 'main.cpp')
+            if not os.path.exists(main_cpp):
+                cpp_files = glob.glob(os.path.join(subdir, '*.cpp'))
+                _log.debug("%d .cpp files found in %s", len(cpp_files), subdir)
+                if not cpp_files:
+                    continue
+                if len(cpp_files) > 1:
+                    _log.warning("skipping %s because multiple cpp files found", subdir)
+                    continue
+                main_cpp = cpp_files[0]
+            cpp_files_for_staging.append(main_cpp)
+        return cpp_files_for_staging
+
+    # noinspection PyMethodMayBeStatic
+    def map_to_destination(self, cpp_files_for_staging: Sequence[str], stage_dir: str, prefix: str):
+        dest_mapping = {}
+        for cpp_file in cpp_files_for_staging:
+            dest_pathname = os.path.join(stage_dir, prefix + os.path.basename(os.path.dirname(cpp_file)) + '.cpp')
+            if dest_pathname in dest_mapping.values():
+                _log.warning("name conflict: multiple sources map to %s", dest_pathname)
+                return 0
+            dest_mapping[cpp_file] = dest_pathname
+        return dest_mapping
+
+    def stage(self, prefix: Optional[str]=None, stage_dir: Optional[str]=None, subdirs: Optional[List[str]]=None) -> int:
+        """Stages files and returns number of files staged."""
+        if prefix is not None and not prefix.strip():
+            raise ValueError("prefix must contain non-whitespace")
+        if prefix is None:
+            prefix = self.cfg.get('stage_prefix', None)
+            # TODO detect prefix from git user.email and root CMakeLists.txt project name
+            if prefix is None:
+                raise PrefixNotDefinedException("prefix must be specified if 'stage_prefix' is not defined in .hwconfig.json")
+        else:
+            self.cfg['stage_prefix'] = prefix
+            self.persist_config()
+        if not subdirs:
+            subdirs = self.detect_subdirs()
+        cpp_files_for_staging = self.find_cpp_files(subdirs)
+        if not cpp_files_for_staging:
+            _log.warning("zero .cpp files found to stage")
             return 0
-        dest_mapping[cpp_file] = dest_pathname
-    for src_file, dst_file in dest_mapping.items():
-        os.makedirs(os.path.dirname(dst_file), exist_ok=True)
-        try:
-            _transfer(src_file, dst_file)
-        except UnstoppedCutException:
-            raise UnstoppedCutException(f"unstopped cut in {src_file}")
-        _log.debug("copied %s -> %s", src_file, dst_file)
-    return len(dest_mapping)
+        stage_dir = os.path.abspath(stage_dir or os.path.join(self.proj_root, self.default_stage_dir_basename))
+        if not self.no_clean and os.path.isdir(stage_dir):
+            clean(stage_dir)
+        dest_mapping = self.map_to_destination(cpp_files_for_staging, stage_dir, prefix)
+        for src_file, dst_file in dest_mapping.items():
+            os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+            try:
+                _transfer(src_file, dst_file)
+            except UnstoppedCutException:
+                raise UnstoppedCutException(f"unstopped cut in {src_file}")
+            _log.debug("copied %s -> %s", src_file, dst_file)
+        return len(dest_mapping)
 
 
 def main():
@@ -167,7 +196,8 @@ def main():
     args = parser.parse_args()
     try:
         proj_root = os.path.abspath(args.project_root or hwsuite.find_proj_root())
-        num_staged = stage(proj_root, args.prefix, args.stage_dir)
+        stager = Stager.create(proj_root)
+        num_staged = stager.stage(args.prefix, args.stage_dir)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
         return 1

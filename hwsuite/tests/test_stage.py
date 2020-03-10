@@ -7,13 +7,14 @@ from typing import List
 from unittest import TestCase
 from pathlib import Path
 from hwsuite import stage
+from hwsuite.stage import Stager
 import logging
 from hwsuite.tests import touch_all
 
 _log = logging.getLogger(__name__)
 
 
-class StageTest(TestCase):
+class StagerTest(TestCase):
 
     def test_stage_normal(self):
         fs_structure = """\
@@ -29,7 +30,8 @@ q3/question.md
             Path(os.path.join(tempdir, '.hwconfig.json')).touch()
             touch_all(tempdir, fs_structure.split())
             prefix = 'abc123_hw_'
-            nstaged = stage.stage(tempdir, prefix)
+            stager = Stager.create(tempdir)
+            nstaged = stager.stage(prefix)
             self.assertEqual(2, nstaged)
             expecteds = {
                 os.path.join(tempdir, 'stage', prefix + 'q1.cpp'),
@@ -43,6 +45,8 @@ q3/question.md
                 else:
                     founds.add(expected)
             self.assertSetEqual(expecteds, founds)
+
+class ModuleTest(TestCase):
 
     def test__should_remove_yes(self):
         for line in [
