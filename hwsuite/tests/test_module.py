@@ -35,12 +35,12 @@ class ModuleMethodsTest(TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
             proj_root = tempdir
             hwsuite.init.do_init(proj_root, safety_mode='cautious', hwconfig={})
-            cfg = hwsuite.get_config(proj_root=proj_root)
+            cfg = hwsuite.get_config(proj_root)
             expected_cfg = dict(cfg.items())
             cfg['foo'] = 'bar'
             expected_cfg['foo'] = 'bar'
             hwsuite.store_config(cfg, proj_root=proj_root)
-            cfg = hwsuite.get_config(proj_root=proj_root)
+            cfg = hwsuite.get_config(proj_root)
             self.assertDictEqual(expected_cfg, cfg)
 
     def test_describe_path(self):

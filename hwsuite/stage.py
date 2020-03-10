@@ -12,10 +12,12 @@ import shutil
 from typing import List, Optional, Sequence
 import re
 import hwsuite
+import subprocess
+from subprocess import PIPE
 
 
 _log = logging.getLogger(__name__)
-
+_SAFE_FILENAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
 
 class PrefixNotDefinedException(hwsuite.MessageworthyException):
     pass
@@ -98,6 +100,30 @@ def _transfer(src_file, dst_file) -> str:
     return ''.join(good_lines)
 
 
+def _has_unsafe_chars(s: str) -> bool:
+    for ch in s:
+        if ch not in _SAFE_FILENAME_CHARS:
+            return True
+    return False
+
+
+class GitException(Exception):
+    pass
+
+
+class GitRunner(object):
+
+    def __init__(self):
+        self.executable = 'git'
+
+    def run(self, args: Sequence[str]):
+        cmd = [self.executable] + list(args)
+        proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE)
+        if proc.returncode != 0:
+            _log.error("exit %s from git: %s", proc.returncode, proc.stderr.decode('utf8'))
+            raise GitException(f"exit {proc.returncode} from git")
+        return proc.stdout.decode('utf8')
+
 class Stager(object):
 
     def __init__(self, proj_root: str, cfg: dict):
@@ -105,6 +131,7 @@ class Stager(object):
         self.cfg = cfg
         self.default_stage_dir_basename = 'stage'
         self.no_clean = False
+        self.git_runner = GitRunner()
 
     def persist_config(self):
         hwsuite.store_config(self.cfg, proj_root=self.proj_root)
@@ -112,7 +139,7 @@ class Stager(object):
     @staticmethod
     def create(proj_root: str) -> 'Stager':
         proj_root = os.path.abspath(proj_root)
-        cfg = hwsuite.get_config(proj_root=proj_root)
+        cfg = hwsuite.get_config(proj_root)
         return Stager(proj_root, cfg)
 
     def detect_subdirs(self) -> List[str]:
@@ -156,15 +183,34 @@ class Stager(object):
             dest_mapping[cpp_file] = dest_pathname
         return dest_mapping
 
+    def suggest_prefix(self):
+        if not os.path.isdir(os.path.join(self.proj_root, '.git')):
+            raise PrefixNotDefinedException("prefix not defined and this is not a git repo, so username could not be guessed")
+        email = self.cfg.get('question_model', {}).get('author', None)
+        if email is None:
+            email = self.git_runner.run(['config', 'user.email']).rstrip()
+        assert email, "email is malformed (empty?)"
+        if '@' in email:
+            username = email.split('@', 1)[0]
+        else:
+            username = email
+        project_name = self.cfg.get('question_model', {}).get('project_name', None)
+        if project_name is None:
+            raise PrefixNotDefinedException("prefix not defined and project name could not be guessed")
+        if username is None:
+            raise PrefixNotDefinedException("prefix not defined and username could not be guessed")
+        if _has_unsafe_chars(project_name) or _has_unsafe_chars(username):
+            raise PrefixNotDefinedException("auto prefix contains unsafe chars")
+        return f"{username}_{project_name}_"
+
     def stage(self, prefix: Optional[str]=None, stage_dir: Optional[str]=None, subdirs: Optional[List[str]]=None) -> int:
         """Stages files and returns number of files staged."""
         if prefix is not None and not prefix.strip():
             raise ValueError("prefix must contain non-whitespace")
         if prefix is None:
             prefix = self.cfg.get('stage_prefix', None)
-            # TODO detect prefix from git user.email and root CMakeLists.txt project name
             if prefix is None:
-                raise PrefixNotDefinedException("prefix must be specified if 'stage_prefix' is not defined in .hwconfig.json")
+                prefix = self.suggest_prefix()
         else:
             self.cfg['stage_prefix'] = prefix
             self.persist_config()

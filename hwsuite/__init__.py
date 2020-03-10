@@ -6,9 +6,11 @@ import logging
 import os
 import os.path
 import subprocess
+from typing import Tuple
 
 _log = logging.getLogger(__name__)
 CFG_FILENAME = ".hwconfig.json"
+CFG_CACHE_DISABLED = False
 _CACHE = {}
 _KEY_CFG = 'config'
 BUILD_DIR_BASENAME = 'cmake-build-debug'
@@ -60,28 +62,35 @@ def find_proj_root(cwd=None, cfg_filename=CFG_FILENAME):
     raise WhereamiException("no ancestor is a hw project root; use hwinit to establish a project directory")
 
 
-def _load_config(cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
+def _load_config_from_file(cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None) -> Tuple[dict, str]:
     if cfg_pathname is None:
         proj_root = proj_root or find_proj_root()
         cfg_pathname = os.path.join(proj_root, default_cfg_filename)
     with open(cfg_pathname, 'r') as ifile:
         ifile_str = ifile.read()
     if not ifile_str.strip():
-        return {}
-    return json.loads(ifile_str)
+        return {}, cfg_pathname
+    return json.loads(ifile_str), cfg_pathname
 
 
-def get_config(cfg_pathname=None, proj_root=None):
+def get_config(proj_root, cfg_pathname=None) -> dict:
+    assert proj_root, "proj_root must be specified"
+    if CFG_CACHE_DISABLED:
+        return _load_config_from_file(cfg_pathname, proj_root=proj_root)[0]
     try:
-        return _CACHE[_KEY_CFG]
+        return _CACHE[_KEY_CFG][proj_root]
     except KeyError:
-        config = _load_config(cfg_pathname, proj_root=proj_root)
-        _CACHE[_KEY_CFG] = config
+        config, cfg_pathname = _load_config_from_file(cfg_pathname, proj_root=proj_root)
+        cfgs = _CACHE.get(_KEY_CFG, None)
+        if cfgs is None:
+            cfgs = {}
+            _CACHE[_KEY_CFG] = cfgs
+        cfgs[cfg_pathname] = config
         return config
 
 
 def store_config(cfg=None, cfg_pathname=None, default_cfg_filename=CFG_FILENAME, proj_root=None):
-    cfg = cfg if cfg is not None else get_config(cfg_pathname, proj_root=proj_root)
+    cfg = cfg if cfg is not None else get_config(proj_root, cfg_pathname)
     cfg_pathname = cfg_pathname or os.path.join(proj_root or find_proj_root(), default_cfg_filename)
     with open(cfg_pathname, 'w') as ofile:
         json.dump(cfg, ofile, indent=2)

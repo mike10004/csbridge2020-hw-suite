@@ -7,14 +7,32 @@ from typing import List
 from unittest import TestCase
 from pathlib import Path
 from hwsuite import stage
-from hwsuite.stage import Stager
+from hwsuite.stage import Stager, GitRunner
 import logging
+import hwsuite.tests
 from hwsuite.tests import touch_all
 
 _log = logging.getLogger(__name__)
 
 
+class FakeGitRunner(object):
+
+    def __init__(self, output):
+        self.output = output
+
+    def run(self, args):
+        return self.output
+
 class StagerTest(TestCase):
+
+    def test_suggest_prefix(self):
+        with tempfile.TemporaryDirectory() as proj_root:
+            hwsuite.tests.write_text_file(""" {"question_model": {"project_name": "hw27"}} """, os.path.join(proj_root, '.hwconfig.json'))
+            hwsuite.tests.touch_all(proj_root, ['.git/config'])
+            stager = Stager.create(proj_root)
+            stager.git_runner = FakeGitRunner('abc123@nyu.edu\n')
+            actual = stager.suggest_prefix()
+            self.assertEqual('abc123_hw27_', actual)
 
     def test_stage_normal(self):
         fs_structure = """\
@@ -45,6 +63,15 @@ q3/question.md
                 else:
                     founds.add(expected)
             self.assertSetEqual(expecteds, founds)
+
+
+class GitRunnerTest(TestCase):
+
+    def test_config(self):
+        runner = GitRunner()
+        output = runner.run(['config', 'user.email'])
+        self.assertFalse(not output.strip())
+
 
 class ModuleTest(TestCase):
 
