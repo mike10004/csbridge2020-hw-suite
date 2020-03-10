@@ -126,21 +126,10 @@ class GitRunner(object):
 
 class Stager(object):
 
-    def __init__(self, proj_root: str, cfg: dict):
+    def __init__(self, proj_root: str):
         self.proj_root = proj_root
-        self.cfg = cfg
         self.default_stage_dir_basename = 'stage'
         self.no_clean = False
-        self.git_runner = GitRunner()
-
-    def persist_config(self):
-        hwsuite.store_config(self.cfg, proj_root=self.proj_root)
-
-    @staticmethod
-    def create(proj_root: str) -> 'Stager':
-        proj_root = os.path.abspath(proj_root)
-        cfg = hwsuite.get_config(proj_root)
-        return Stager(proj_root, cfg)
 
     def detect_subdirs(self) -> List[str]:
         subdirs = []
@@ -183,37 +172,11 @@ class Stager(object):
             dest_mapping[cpp_file] = dest_pathname
         return dest_mapping
 
-    def suggest_prefix(self):
-        if not os.path.isdir(os.path.join(self.proj_root, '.git')):
-            raise PrefixNotDefinedException("prefix not defined and this is not a git repo, so username could not be guessed")
-        email = self.cfg.get('question_model', {}).get('author', None)
-        if email is None:
-            email = self.git_runner.run(['config', 'user.email']).rstrip()
-        assert email, "email is malformed (empty?)"
-        if '@' in email:
-            username = email.split('@', 1)[0]
-        else:
-            username = email
-        project_name = self.cfg.get('question_model', {}).get('project_name', None)
-        if project_name is None:
-            raise PrefixNotDefinedException("prefix not defined and project name could not be guessed")
-        if username is None:
-            raise PrefixNotDefinedException("prefix not defined and username could not be guessed")
-        if _has_unsafe_chars(project_name) or _has_unsafe_chars(username):
-            raise PrefixNotDefinedException("auto prefix contains unsafe chars")
-        return f"{username}_{project_name}_"
-
-    def stage(self, prefix: Optional[str]=None, stage_dir: Optional[str]=None, subdirs: Optional[List[str]]=None) -> int:
+    def stage(self, prefix: str, stage_dir: Optional[str]=None, subdirs: Optional[List[str]]=None) -> int:
         """Stages files and returns number of files staged."""
-        if prefix is not None and not prefix.strip():
-            raise ValueError("prefix must contain non-whitespace")
-        if prefix is None:
-            prefix = self.cfg.get('stage_prefix', None)
-            if prefix is None:
-                prefix = self.suggest_prefix()
-        else:
-            self.cfg['stage_prefix'] = prefix
-            self.persist_config()
+        if prefix is not None:
+            if not prefix.strip():
+                raise ValueError("prefix must contain non-whitespace")
         if not subdirs:
             subdirs = self.detect_subdirs()
         cpp_files_for_staging = self.find_cpp_files(subdirs)
@@ -234,16 +197,59 @@ class Stager(object):
         return len(dest_mapping)
 
 
+def suggest_prefix(cfg, proj_root, git_runner=None) -> str:
+    email = cfg.get('question_model', {}).get('author', None)
+    if email is None:
+        if not os.path.isdir(os.path.join(proj_root, '.git')):
+            raise PrefixNotDefinedException(
+                "prefix not defined and this is not a git repo, so username could not be guessed")
+        if git_runner is None:
+            git_runner = GitRunner()
+        email = git_runner.run(['config', 'user.email']).rstrip()
+        _log.debug("acquired email address from git config: %s", email)
+    else:
+        _log.debug("acquired email address from question model: %s", email)
+    assert email, "email is malformed (empty?)"
+    if '@' in email:
+        username = email.split('@', 1)[0]
+    else:
+        username = email
+    project_name = cfg.get('question_model', {}).get('project_name', None)
+    if project_name is None:
+        raise PrefixNotDefinedException("prefix not defined and project name could not be guessed")
+    if username is None:
+        raise PrefixNotDefinedException("prefix not defined and username could not be guessed")
+    if _has_unsafe_chars(project_name) or _has_unsafe_chars(username):
+        raise PrefixNotDefinedException("auto prefix contains unsafe chars")
+    return f"{username}_{project_name}_"
+
+
+def require_prefix(cfg, proj_root) -> str:
+    prefix = cfg.get('stage_prefix', None)
+    if prefix is None:
+        prefix = suggest_prefix(cfg, proj_root)
+    cfg['stage_prefix'] = prefix
+    hwsuite.store_config(cfg, proj_root=proj_root)
+    _log.info("persisted prefix %s to project config", prefix)
+    return prefix
+
+
 def main():
     parser = ArgumentParser()
-    parser.add_argument("prefix", nargs='?', help="prefix (if not stored in .hwconfig.json)")
+    parser.add_argument("prefix", nargs='?', help="prefix")
+    hwsuite.add_logging_options(parser)
     parser.add_argument("--project-root", metavar="DIR")
     parser.add_argument("--stage-dir", metavar="DIR", help="destination directory")
     args = parser.parse_args()
     try:
+        hwsuite.configure_logging(args)
         proj_root = os.path.abspath(args.project_root or hwsuite.find_proj_root())
-        stager = Stager.create(proj_root)
-        num_staged = stager.stage(args.prefix, args.stage_dir)
+        cfg = hwsuite.get_config(proj_root)
+        prefix = args.prefix
+        if prefix is None:
+            prefix = require_prefix(cfg, proj_root)
+        stager = Stager(proj_root)
+        num_staged = stager.stage(prefix, args.stage_dir)
     except hwsuite.MessageworthyException as ex:
         print(f"{__name__}: {type(ex).__name__}: {ex}", file=sys.stderr)
         return 1

@@ -25,15 +25,6 @@ class FakeGitRunner(object):
 
 class StagerTest(TestCase):
 
-    def test_suggest_prefix(self):
-        with tempfile.TemporaryDirectory() as proj_root:
-            hwsuite.tests.write_text_file(""" {"question_model": {"project_name": "hw27"}} """, os.path.join(proj_root, '.hwconfig.json'))
-            hwsuite.tests.touch_all(proj_root, ['.git/config'])
-            stager = Stager.create(proj_root)
-            stager.git_runner = FakeGitRunner('abc123@nyu.edu\n')
-            actual = stager.suggest_prefix()
-            self.assertEqual('abc123_hw27_', actual)
-
     def test_stage_normal(self):
         fs_structure = """\
 q1/main.cpp
@@ -48,7 +39,7 @@ q3/question.md
             Path(os.path.join(tempdir, '.hwconfig.json')).touch()
             touch_all(tempdir, fs_structure.split())
             prefix = 'abc123_hw_'
-            stager = Stager.create(tempdir)
+            stager = Stager(tempdir)
             nstaged = stager.stage(prefix)
             self.assertEqual(2, nstaged)
             expecteds = {
@@ -178,3 +169,18 @@ int main()
         actual_lines = stage._transfer_lines(text.split("\n"))
         actual = "\n".join(actual_lines)
         self.assertEqual(expected, actual)
+
+    def test_suggest_prefix_git(self):
+        with tempfile.TemporaryDirectory() as proj_root:
+            hwsuite.tests.touch_all(proj_root, ['.git/config'])
+            cfg = {"question_model": {"project_name": "hw27"}}
+            actual = stage.suggest_prefix(cfg, proj_root, git_runner = FakeGitRunner('abc123@nyu.edu\n'))
+            self.assertEqual('abc123_hw27_', actual)
+
+    def test_suggest_prefix_author(self):
+        with tempfile.TemporaryDirectory() as proj_root:
+            hwsuite.tests.touch_all(proj_root, ['.git/config'])
+            cfg = {"question_model": {"project_name": "hw27", "author": 'def456@nyu.edu'}}
+            actual = stage.suggest_prefix(cfg, proj_root, git_runner = FakeGitRunner('abc123@nyu.edu\n'))
+            self.assertEqual('def456_hw27_', actual)
+
