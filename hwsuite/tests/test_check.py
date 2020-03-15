@@ -4,10 +4,12 @@ import logging
 import os
 import tempfile
 import threading
+from typing import Sequence, List, Dict
 from unittest import TestCase
 from hwsuite import check
 import hwsuite.tests
-from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome
+from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome, CppChecker, \
+    TestCaseRunnerFactory, TestCasesConfig
 
 hwsuite.tests.configure_logging()
 
@@ -208,3 +210,23 @@ class TestCaseRunnerTest(TestCase):
             outcome = t.run_test_case(check.TestCase.create(input_file, expected_file))
             return outcome
 
+
+class FixedTestCaseFilesChecker(CppChecker):
+
+    def __init__(self, runner_factory: TestCaseRunnerFactory, concurrency_level: int, test_case_files: Sequence[TestCase]):
+        super().__init__(runner_factory, concurrency_level)
+        self.test_case_files = list(test_case_files)
+
+    def _detect_test_case_files(self, q_dir: str=None) -> List[TestCase]:
+        return self.test_case_files
+
+
+class CppCheckerTest(TestCase):
+
+    def test_zero_cases_detected(self):
+        runner_factory = TestCaseRunnerFactory(Throttle.default(), StuffConfig.default())
+        checker = FixedTestCaseFilesChecker(runner_factory, 1, [])
+        outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp('/tmp/hw10/q1/main.cpp', TestCasesConfig(1, None))
+        self.assertIsNotNone(outcomes)
+        self.assertIsInstance(outcomes, dict)
+        self.assertDictEqual({}, outcomes)

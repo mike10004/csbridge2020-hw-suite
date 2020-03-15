@@ -580,17 +580,27 @@ class CppChecker(object):
         self.runner_factory = runner_factory
         self.concurrency_level = concurrency_level
 
-    def check_cpp(self, cpp_file: str, test_cases_cfg: TestCasesConfig):
-        q_dir = os.path.dirname(cpp_file)
+    # noinspection PyMethodMayBeStatic
+    def _detect_test_cases(self, q_dir: str) -> List[TestCase]:
+        return detect_test_case_files(q_dir)
+
+    # noinspection PyMethodMayBeStatic
+    def _resolve_executable(self, q_dir: str) -> str:
         q_name = os.path.basename(q_dir)
         q_executable = os.path.join(q_dir, 'cmake-build', q_name)
         assert os.path.isfile(q_executable), "not found: " + q_executable
-        test_case_files = detect_test_case_files(q_dir)
-        _log.info("%s: detected %s test cases", q_name, len(test_case_files))
-        if not test_case_files:
-            return
-        runner = self.runner_factory.create(q_executable)
+        return q_executable
+
+    def check_cpp(self, cpp_file: str, test_cases_cfg: TestCasesConfig) -> Dict[TestCase, TestCaseOutcome]:
+        q_dir = os.path.dirname(cpp_file)
+        test_case_files = self._detect_test_cases(q_dir)
         outcomes = {}
+        if not test_case_files:
+            return outcomes
+        q_name = os.path.basename(q_dir)
+        _log.info("%s: detected %s test cases", q_name, len(test_case_files))
+        q_executable = self._resolve_executable(cpp_file)
+        runner = self.runner_factory.create(q_executable)
         threads: List[threading.Thread] = []
         concurrency_mgr = ConcurrencyManager(runner, self.concurrency_level)
         for i, test_case in enumerate(test_case_files):
@@ -615,8 +625,11 @@ def review_outcomes(outcomes: Dict[TestCase, TestCaseOutcome], report_type, q_na
     failures = [outcome for outcome in outcomes.values() if not outcome.passed]
     if failures:
         _log.info("%s: %s failures among %s test cases", q_name, len(failures), len(outcomes))
-    elif len(outcomes) > 0:
-        _log.info("%s: all %s tests pass", q_name, len(outcomes))
+    else:
+        if len(outcomes) > 0:
+            _log.info("%s: all %s tests pass", q_name, len(outcomes))
+        else:
+            _log.warning("zero test cases executed for %s", q_name)
     report(failures, report_type)
     return len(failures)
 
