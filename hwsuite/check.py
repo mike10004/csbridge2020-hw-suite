@@ -599,7 +599,7 @@ class CppChecker(object):
             return outcomes
         q_name = os.path.basename(q_dir)
         _log.info("%s: detected %s test cases", q_name, len(test_case_files))
-        q_executable = self._resolve_executable(cpp_file)
+        q_executable = self._resolve_executable(q_dir)
         runner = self.runner_factory.create(q_executable)
         threads: List[threading.Thread] = []
         concurrency_mgr = ConcurrencyManager(runner, self.concurrency_level)
