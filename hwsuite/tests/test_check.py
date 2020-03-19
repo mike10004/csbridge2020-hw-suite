@@ -11,7 +11,7 @@ import hwsuite.question
 import hwsuite.build
 import hwsuite.tests
 from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome, CppChecker, \
-    TestCaseRunnerFactory, TestCasesConfig
+    TestCaseRunnerFactory, TestCasesConfig, ValgrindConfig
 
 hwsuite.tests.configure_logging()
 
@@ -22,7 +22,7 @@ def _create_namespace(**kwargs) -> argparse.Namespace:
     # noinspection PyProtectedMember
     check_args = argparse.Namespace(subdirs=[], pause=check._DEFAULT_PAUSE_DURATION_SECONDS,
                            max_cases=None, threads=4, log_input=False, filter=None, report='none',
-                           stuff='auto', test_cases='auto', project_dir=None, await=False, require_screen='auto')
+                           stuff='auto', test_cases='auto', project_dir=None, await=False, require_screen='auto', valgrind=None)
     for k, v in kwargs.items():
         check_args.__setattr__(k, v)
     return check_args
@@ -254,7 +254,9 @@ class CppCheckerTest(TestCase):
 123
 """, os.path.join(q_dir, '1-expected.txt'))
             hwsuite.build.build(proj_dir)
-            runner_factory = TestCaseRunnerFactory(Throttle.default(), StuffConfig.default())
+            args = argparse.Namespace(valgrind='applicability=auto&verbosity=quiet')
+            valgrind_config = ValgrindConfig.from_options(args)
+            runner_factory = TestCaseRunnerFactory(Throttle.default(), StuffConfig.default(), valgrind_config=valgrind_config)
             checker = CppChecker(runner_factory, 1)
             outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig(1, None))
             self.assertIsNotNone(outcomes)

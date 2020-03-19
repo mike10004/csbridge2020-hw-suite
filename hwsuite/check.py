@@ -9,7 +9,7 @@ import argparse
 import difflib
 import fnmatch
 import multiprocessing
-import re
+import urllib.parse
 import sys
 import logging
 import threading
@@ -356,10 +356,74 @@ class Throttle(NamedTuple):
         return Throttle(_DEFAULT_PAUSE_DURATION_SECONDS, PollConfig.disabled(), _DEFAULT_PROCESSING_TIMEOUT_SECONDS)
 
 
+class ValgrindConfig(NamedTuple):
+
+    valgrind_executable: str
+    options: Tuple[str, ...]
+    applicability: str        # values: auto, always, never
+    verbosity: str            # values: normal, quiet
+
+    def is_applicable(self, test_case: TestCase) -> bool:
+        if self.applicability == 'always':
+            return True
+        if self.applicability == 'never':
+            return False
+        if self.applicability == 'auto':
+            return test_case.input_file is None
+        raise ValueError("applicability is not recognized in this config object")
+
+    def build_command(self, subject_cmd: Sequence[str]):
+        return [self.valgrind_executable] + list(self.options) + ['--'] + list(subject_cmd)
+
+    @staticmethod
+    def from_options(args: argparse.Namespace):
+        # TODO parse valgrind options other than applicability
+        valgrind_spec = args.valgrind or ''
+        executable = 'valgrind'
+        options = (
+            '--error-exitcode=2',
+            '--tool=memcheck',
+            '--gen-suppressions=all',
+            '--leak-check=full',
+            '--leak-resolution=med',
+            '--track-origins=yes',
+            '--vgdb=no'
+        )
+        applicability = 'auto'
+        verbosity = 'normal'
+        spec_parts: Dict[str, List[str]] = urllib.parse.parse_qs(valgrind_spec)
+        for param_name, values in spec_parts.items():
+            if param_name == 'applicability':
+                applicability = values[-1]
+            elif param_name == 'verbosity':
+                verbosity = values[-1]
+            elif param_name == 'executable':
+                executable = values[-1]
+        return ValgrindConfig(executable, options, applicability, verbosity)
+
+    def is_quiet(self):
+        return self.verbosity == 'quiet'
+
+
+VALGRIND_DISABLED = ValgrindConfig('/bin/false', tuple(), 'never', 'normal')
+
+
+class ValgrindRunner(object):
+
+    def __init__(self, config: ValgrindConfig):
+        self.config = config
+
+    def run(self, cmd: List[str]) -> subprocess.CompletedProcess:
+        valgrind_cmd = self.config.build_command(cmd)
+        proc = subprocess.run(valgrind_cmd, stdout=PIPE, stderr=PIPE)
+        _log.debug("valgrind terminated with code %s", proc.returncode)
+        return proc
+
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
-    def __init__(self, executable, throttle: Throttle, stuff_config: StuffConfig, require_screen = 'auto'):
+    def __init__(self, executable, throttle: Throttle, stuff_config: StuffConfig, require_screen = 'auto',
+                 valgrind_config: ValgrindConfig = VALGRIND_DISABLED):
         self.executable = executable
         self.throttle = throttle
         assert isinstance(throttle, Throttle)
@@ -367,6 +431,7 @@ class TestCaseRunner(object):
         assert isinstance(stuff_config, StuffConfig)
         self.processing_timeout: float = 5.0
         self.require_screen = require_screen
+        self.valgrind_config = valgrind_config
 
     def _pause(self, duration=None):
         time.sleep(self.throttle.pause_duration if duration is None else duration)
@@ -472,20 +537,28 @@ class TestCaseRunner(object):
                 completed_proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, cwd=tempdir, env=test_case.env_dict())
                 output = completed_proc.stdout.decode('utf8')
                 # TODO log stderr
-                if not test_case.check_exit_code(completed_proc.returncode):
+                if test_case.check_exit_code(completed_proc.returncode):
+                    if self.valgrind_config.is_applicable(test_case):
+                        valgrind_proc = ValgrindRunner(self.valgrind_config).run(cmd)
+                        if valgrind_proc.returncode != 0:
+                            if not self.valgrind_config.is_quiet():
+                                _log.info("valgrind memcheck detected leak:\n%s\n", valgrind_proc.stderr.decode('utf8'))
+                            return make_outcome(False, expected_text, output, "memcheck")
+                else:
                     return make_outcome(False, expected_text, output, f"unexpected exit code {completed_proc.returncode}")
         return check(output)
 
 
 class TestCaseRunnerFactory(object):
 
-    def __init__(self, throttle: Throttle, stuff_config: StuffConfig, require_screen: str = 'auto'):
+    def __init__(self, throttle: Throttle, stuff_config: StuffConfig, require_screen: str = 'auto', valgrind_config: ValgrindConfig = VALGRIND_DISABLED):
         self.stuff_config = stuff_config
         self.throttle = throttle
         self.require_screen = require_screen
+        self.valgrind_config = valgrind_config
 
     def create(self, executable: str):
-        return TestCaseRunner(executable, self.throttle, self.stuff_config, self.require_screen)
+        return TestCaseRunner(executable, self.throttle, self.stuff_config, self.require_screen, self.valgrind_config)
 
 
 class ConcurrencyManager(object):
@@ -662,7 +735,8 @@ def _main(args: argparse.Namespace):
     throttle = Throttle(args.pause, await_config, _DEFAULT_PROCESSING_TIMEOUT_SECONDS)
     stuff_config = StuffConfig.from_args(args)
     test_cases_config = TestCasesConfig(args.max_cases, args.filter)
-    runner_factory = TestCaseRunnerFactory(throttle, stuff_config, args.require_screen)
+    valgrind_config = ValgrindConfig.from_options(args)
+    runner_factory = TestCaseRunnerFactory(throttle, stuff_config, args.require_screen, valgrind_config)
     for i, cpp_file in enumerate(sorted(main_cpps)):
         if args.test_cases != 'existing':
             defs_file = os.path.join(os.path.dirname(cpp_file), 'test-cases.json')
@@ -694,6 +768,7 @@ def main():
     parser.add_argument("--project-dir", metavar="DIR", help="project directory (if not current directory)")
     parser.add_argument("--await", type=float, metavar="INTERVAL", help="poll with specified interval for text on process output stream before sending input")
     parser.add_argument("--require-screen", choices=('auto', 'always', 'never'), default='auto', help="how to decide whether to use `screen` to run executable; default is 'auto', which means only when input is to be sent to process")
+    parser.add_argument("--valgrind", help="specify valgrind configuration; use 'applicability=never' to disable")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:
