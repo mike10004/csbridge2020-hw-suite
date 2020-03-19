@@ -3,10 +3,12 @@ import argparse
 import logging
 import os
 import tempfile
-import threading
 from typing import Sequence, List, Dict
 from unittest import TestCase
 from hwsuite import check
+import hwsuite.init
+import hwsuite.question
+import hwsuite.build
 import hwsuite.tests
 from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome, CppChecker, \
     TestCaseRunnerFactory, TestCasesConfig
@@ -230,3 +232,34 @@ class CppCheckerTest(TestCase):
         self.assertIsNotNone(outcomes)
         self.assertIsInstance(outcomes, dict)
         self.assertDictEqual({}, outcomes)
+
+    def test_valgrind_error(self):
+        with tempfile.TemporaryDirectory() as proj_dir:
+            hwsuite.init.do_init(proj_dir, hwsuite.init._DEFAULT_SAFETY_MODE, {})
+            q_dir = hwsuite.question._main_raw(proj_dir, 'q1')
+            cpp_file = os.path.join(q_dir, 'main.cpp')
+            os.remove(os.path.join(q_dir, 'test-cases.json'))
+            hwsuite.tests.write_text_file("""\
+            #include <iostream>
+            int main() {
+                int* a = new int[3];
+                a[0] = 1;
+                a[1] = 2;
+                a[2] = 3;
+                std::cout << a[0] << a[1] << a[2] << std::endl;
+                return 0;
+            }
+            """, cpp_file)
+            hwsuite.tests.write_text_file("""\
+123
+""", os.path.join(q_dir, '1-expected.txt'))
+            hwsuite.build.build(proj_dir)
+            runner_factory = TestCaseRunnerFactory(Throttle.default(), StuffConfig.default())
+            checker = CppChecker(runner_factory, 1)
+            outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig(1, None))
+            self.assertIsNotNone(outcomes)
+            self.assertIsInstance(outcomes, dict)
+            self.assertEqual(1, len(outcomes))
+            outcome = list(outcomes.values())[0]
+            self.assertFalse(outcome.passed, "expect failed memcheck")
+            self.assertTrue(outcome.message.startswith("memcheck"), "expect message includes 'memcheck'")

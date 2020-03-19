@@ -117,7 +117,8 @@ class Questioner(object):
         _log.debug("appended subdirectory line to %s", root_cmakelists_file)
 
 
-def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE):
+def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE) -> str:
+    """Does the work you want and returns the path of the new directory."""
     proj_dir = os.path.abspath(proj_dir or hwsuite.find_proj_root())
     questioner = Questioner(proj_dir)
     q_name = q_name if q_name is not None else questioner.detect_next_qname()
@@ -130,6 +131,7 @@ def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE):
     questioner.populate(q_dir)
     questioner.config_root_proj(q_name)
     _log.info("%s created", hwsuite.describe_path(q_dir))
+    return q_dir
 
 
 def _main(args: argparse.Namespace) -> int:
