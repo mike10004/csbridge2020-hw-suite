@@ -3,6 +3,7 @@ import argparse
 import logging
 import os
 import tempfile
+from pathlib import Path
 from typing import Sequence, List, Dict
 from unittest import TestCase
 from hwsuite import check
@@ -10,8 +11,8 @@ import hwsuite.init
 import hwsuite.question
 import hwsuite.build
 import hwsuite.tests
-from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome, CppChecker, \
-    TestCaseRunnerFactory, TestCasesConfig, ValgrindConfig
+from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome, CppChecker
+from hwsuite.check import TestCaseRunnerFactory, TestCasesConfig, ValgrindConfig, Result
 
 hwsuite.tests.configure_logging()
 
@@ -88,7 +89,7 @@ Please enter a line of text:
         runner = TestCaseRunner('false', Throttle.default(), StuffConfig.default())
         def to_outcome(a, b, c, d):
             return TestCaseOutcome(a, 'false', hwsuite.check.TestCase.create(None, 'x'), b, c, d)
-        outcome = runner._check(expected_text, actual_text, to_outcome)
+        outcome = runner._check(Result(0, expected_text), Result(0, actual_text), to_outcome)
         self.assertTrue(outcome.passed, f"expect passed for {outcome}")
 
     def test__derive_counterparts(self):
@@ -187,6 +188,12 @@ class TestCaseRunnerTest(TestCase):
         print(outcome)
         self.assertTrue(outcome.passed)
 
+    def test_run_test_case_no_expected(self):
+        t = check.TestCaseRunner('true', Throttle.default(), StuffConfig.default())
+        outcome = t.run_test_case(check.TestCase.create(None, None))
+        print(outcome)
+        self.assertTrue(outcome.passed)
+
     def test_screen_stuff_special_chars(self):
         outcome = self.do_test_screen_stuff_special_chars(StuffConfig('auto', True))
         print(outcome)
@@ -217,21 +224,28 @@ class FixedTestCaseFilesChecker(CppChecker):
 
     def __init__(self, runner_factory: TestCaseRunnerFactory, concurrency_level: int, test_case_files: Sequence[TestCase]):
         super().__init__(runner_factory, concurrency_level)
-        self.test_case_files = list(test_case_files)
+        self.test_cases = list(test_case_files)
 
-    def _detect_test_case_files(self, q_dir: str=None) -> List[TestCase]:
-        return self.test_case_files
+    def _detect_test_cases(self, q_dir: str=None) -> List[TestCase]:
+        assert self.test_cases, "this method must return nonempty"
+        return self.test_cases
 
 
 class CppCheckerTest(TestCase):
 
-    def test_zero_cases_detected(self):
+    def test_zero_test_case_files(self):
         runner_factory = TestCaseRunnerFactory(Throttle.default(), StuffConfig.default())
-        checker = FixedTestCaseFilesChecker(runner_factory, 1, [])
-        outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp('/tmp/hw10/q1/main.cpp', TestCasesConfig(1, None))
-        self.assertIsNotNone(outcomes)
-        self.assertIsInstance(outcomes, dict)
-        self.assertDictEqual({}, outcomes)
+        checker = CppChecker(runner_factory, 1)
+        with tempfile.TemporaryDirectory() as proj_dir:
+            q_dir = os.path.join(proj_dir, 'q14')
+            os.makedirs(q_dir)
+            Path(os.path.join(q_dir, "main.cpp")).touch()
+            detected = checker._detect_test_cases(q_dir)
+        self.assertEqual(1, len(detected), "zero test case files should yield exactly one standard test case")
+        test_case = list(detected)[0]
+        self.assertIsNone(test_case.input_file, "input")
+        self.assertIsNone(test_case.expected_file, "expected")
+        self.assertEqual(0, test_case.exit_code, "exit code")
 
     def test_valgrind_error(self):
         with tempfile.TemporaryDirectory() as proj_dir:

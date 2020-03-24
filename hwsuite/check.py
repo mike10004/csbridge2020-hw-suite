@@ -55,23 +55,24 @@ def read_file_lines(pathname: str, rstrip=None) -> List[str]:
 class TestCase(NamedTuple):
 
     input_file: Optional[str]
-    expected_file: str
+    expected_file: Optional[str]
     env: Optional[FrozenSet[Tuple[str, str]]]
     args: Tuple[str, ...]
+    exit_code: int
 
     def env_dict(self) -> Optional[Dict[str, str]]:
         return None if self.env is None else dict(self.env)
 
     @staticmethod
-    def create(input_file: Optional[str], expected_file: str, env: Optional[Dict[str, str]]=None, args: Optional[Sequence[str]]=None):
+    def create(input_file: Optional[str], expected_file: Optional[str], env: Optional[Dict[str, str]]=None, args: Optional[Sequence[str]]=None, exit_code=0):
         env = None if env is None else frozenset(env.items())
         args = tuple() if args is None else tuple(args)
-        return TestCase(input_file, expected_file, env, args)
+        return TestCase(input_file, expected_file, env, args, exit_code)
 
     # noinspection PyMethodMayBeStatic
     def check_exit_code(self, exit_code: int) -> bool:
         """Return True iff the exit code is what is expected for this test case."""
-        return exit_code == 0
+        return exit_code == self.exit_code
 
 
 def _read_env(env_file) -> Dict[str, str]:
@@ -125,7 +126,7 @@ def _create_test_case(expected_pathname: str) -> TestCase:
     args = tuple()
     if os.path.exists(args_file):
         args = tuple(read_file_lines(args_file, rstrip="\n"))
-    return TestCase(input_file, expected_pathname, env, args)
+    return TestCase.create(input_file, expected_pathname, env, args)
 
 
 def detect_test_case_files(q_dir: str) -> List[TestCase]:
@@ -143,7 +144,7 @@ class TestCaseOutcome(NamedTuple):
     passed: bool
     executable: str
     test_case: TestCase
-    expected_text: str
+    expected_text: Optional[str]
     actual_text: str
     message: str
 
@@ -419,6 +420,11 @@ class ValgrindRunner(object):
         _log.debug("valgrind terminated with code %s", proc.returncode)
         return proc
 
+class Result(NamedTuple):
+
+    exit_code: int
+    text: Optional[str]
+
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
 
@@ -463,7 +469,13 @@ class TestCaseRunner(object):
     def _compare_texts(self, expected, actual) -> bool:
         return expected == actual
 
-    def _check(self, expected_text: str, actual_text: str, to_outcome: Callable[[bool, str, str, str], TestCaseOutcome]) -> TestCaseOutcome:
+    def _check(self, expected: Result, actual: Result, to_outcome: Callable[[bool, Optional[str], str, str], TestCaseOutcome]) -> TestCaseOutcome:
+        if expected.text is None:
+            passed = (expected.exit_code == actual.exit_code)
+            message = "ok" if passed else "exit_code"
+            return to_outcome(passed, None, actual.text, message)
+        expected_text = expected.text
+        actual_text = actual.text
         expected_texts = self._transform_expected(expected_text, actual_text)
         actual_texts = self._transform_actual(expected_text, actual_text)
         expected_candidate, actual_candidate = None, None
@@ -492,13 +504,18 @@ class TestCaseRunner(object):
         input_file = test_case.input_file
         _log.debug("[%x] use_screen=%s for require_screen=%s and input=%s (test case %x)", thread_id, use_screen, self.require_screen, None if input_file is None else os.path.basename(input_file), hash(test_case))
         expected_file = test_case.expected_file
-        expected_text = read_file_text(expected_file)
+        if expected_file is None:
+            expected_text = None
+        else:
+            expected_text = read_file_text(expected_file)
 
-        def make_outcome(passed: bool, expected_text_: str, actual_text: Optional[str], message: str) -> TestCaseOutcome:
+        def make_outcome(passed: bool, expected_text_: Optional[str], actual_text: Optional[str], message: str) -> TestCaseOutcome:
             return TestCaseOutcome(passed, self.executable, test_case, expected_text_, actual_text, message)
 
-        def check(actual_text: str) -> TestCaseOutcome:
-            return self._check(expected_text, actual_text, make_outcome)
+        def check(actual_exit_code: int, actual_text: str) -> TestCaseOutcome:
+            expected = Result(test_case.exit_code, expected_text)
+            actual = Result(actual_exit_code, actual_text)
+            return self._check(expected, actual, make_outcome)
 
         if input_file is None:
             input_lines = []
@@ -529,12 +546,13 @@ class TestCaseRunner(object):
                             if not screener.finished():
                                 screener.kill()
                 output = screener.logfile_text(ignore_failure=False)
-                if screener.completed_proc is not None and screener.completed_proc.returncode != 0:
-                    return make_outcome(False, expected_text, output, f"screen -D -m {self.executable} exit code {screener.completed_proc.returncode}")
+                assert screener.completed_proc, "completed process not assigned to screen runner"
+                exit_code = screener.completed_proc.returncode
             else:
                 # if we don't need to send/capture input, then we can just execute
                 cmd = [self.executable] + list(test_case.args)
                 completed_proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, cwd=tempdir, env=test_case.env_dict())
+                exit_code = completed_proc.returncode
                 output = completed_proc.stdout.decode('utf8')
                 # TODO log stderr
                 if test_case.check_exit_code(completed_proc.returncode):
@@ -546,7 +564,7 @@ class TestCaseRunner(object):
                             return make_outcome(False, expected_text, output, "memcheck")
                 else:
                     return make_outcome(False, expected_text, output, f"unexpected exit code {completed_proc.returncode}")
-        return check(output)
+        return check(exit_code, output)
 
 
 class TestCaseRunnerFactory(object):
@@ -612,6 +630,7 @@ def report(outcomes: List[TestCaseOutcome], report_type: str, ofile=sys.stderr):
         print(f"{q_name}: {input_name}: {outcome.message}")
         if outcome.message == 'diff':
             if report_type == 'diff':
+                # expected_text can't be None here, or outcome.message would not be 'diff'
                 expected = outcome.expected_text.split("\n")
                 actual = outcome.actual_text.split("\n")
                 delta = difflib.context_diff(expected, actual)
@@ -655,7 +674,10 @@ class CppChecker(object):
 
     # noinspection PyMethodMayBeStatic
     def _detect_test_cases(self, q_dir: str) -> List[TestCase]:
-        return detect_test_case_files(q_dir)
+        cases_from_files = detect_test_case_files(q_dir)
+        if cases_from_files:
+            return cases_from_files
+        return [TestCase.create(None, None)]  # case that merely requires exit code zero
 
     # noinspection PyMethodMayBeStatic
     def _resolve_executable(self, q_dir: str) -> str:
