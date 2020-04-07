@@ -211,7 +211,7 @@ class TestCaseRunnerTest(TestCase):
         assert stuff_config.eof, "StuffConfig.eof must be True because `cat` likes it"
         with tempfile.TemporaryDirectory() as tempdir:
             input_file = os.path.join(tempdir, 'input.txt')
-            text = "caret ^ cool\n"
+            text = "caret ^ hash # money $ cool\n"
             hwsuite.tests.write_text_file(text, input_file)
             expected_file = os.path.join(tempdir, 'expected.txt')
             hwsuite.tests.write_text_file(text + text, expected_file)  # text+text because once on stdin, once on stdout

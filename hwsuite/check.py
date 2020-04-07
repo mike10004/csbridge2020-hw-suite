@@ -20,9 +20,9 @@ import os.path
 import subprocess
 import time
 from hwsuite import testcases
-from subprocess import PIPE, DEVNULL
+from subprocess import PIPE
 from argparse import ArgumentParser
-from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet, Generator, Callable, Sequence
+from typing import List, Tuple, Optional, NamedTuple, Dict, FrozenSet, Callable, Sequence
 import hwsuite.build
 
 
@@ -211,7 +211,14 @@ def get_arg(args: argparse.Namespace, attr_name: str, default_value):
     except AttributeError:
         return default_value
 
-_BAD_STUFF_CHARS = "^#"
+_STUFF_SPECIALS = {
+    '^': None,
+    '#': None,
+    '$': '\$'
+}
+
+_STUFF_SPECIALS_KEYS = frozenset(_STUFF_SPECIALS.keys())
+
 
 class StuffContentException(ValueError):
 
@@ -227,7 +234,7 @@ class StuffConfig(NamedTuple):
             raise ValueError("unrecognized stuff mode")
         if self.mode == 'strict':
             if StuffConfig.has_special_chars(line):
-                raise StuffContentException(f"input line contains characters that may not be compatible with screen `stuff` command: {repr(line)} has at least one of {repr(_BAD_STUFF_CHARS)}")
+                raise StuffContentException(f"input line contains characters that may not be compatible with screen `stuff` command: {repr(line)} has at least one of {repr(_STUFF_SPECIALS_KEYS)}")
         if self.mode == 'auto':
             line = StuffConfig.translate_special_chars(line)
             if line[-1] != "\n":
@@ -236,7 +243,7 @@ class StuffConfig(NamedTuple):
 
     @staticmethod
     def has_special_chars(line: str) -> bool:
-        for ch in _BAD_STUFF_CHARS:
+        for ch in _STUFF_SPECIALS_KEYS:
             if ch in line:
                 return True
         return False
@@ -247,8 +254,11 @@ class StuffConfig(NamedTuple):
             return line
         chars = list(line)
         for i, ch in enumerate(chars):
-            if ch in _BAD_STUFF_CHARS:
-                ch = "\\" + oct(ord(ch))[2:]
+            if ch in _STUFF_SPECIALS_KEYS:
+                escapage = _STUFF_SPECIALS[ch]
+                if escapage is None:
+                    escapage = "\\" + oct(ord(ch))[2:]
+                ch = escapage
             chars[i] = ch
         return ''.join(chars)
 
@@ -284,6 +294,7 @@ class ScreenRunnable(object):
         return self.started_proc
 
     def await_proc(self, timeout: float):
+        _log.debug("await_proc with timeout %s", timeout)
         try:
             self.started_proc.wait(timeout)
             self.completed_proc = subprocess.CompletedProcess(self.started_proc.args, self.started_proc.returncode, '', '')
@@ -305,7 +316,7 @@ class ScreenRunnable(object):
         proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)
         if proc.returncode != 0:
             stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
-            msg = f"[{thread_id}] stuff exit code {proc.returncode} feeding line {line_num}; stderr={stderr}; stdout={stdout}"
+            msg = f"[{thread_id}] stuff exit code {proc.returncode} feeding line {line_num}; stderr={repr(stderr)}; stdout={repr(stdout)}"
             _log.info(msg)
         return proc
 
@@ -324,10 +335,15 @@ class ScreenRunnable(object):
         if self.finished():
             return True
         _log.debug("quitting screen process")
-        exitcode = subprocess.call(['screen', '-S', self.case_id, '-X', 'quit'], stdout=DEVNULL, stderr=DEVNULL)
-        if not self.finished and exitcode != 0:  # there's a race here and we may not know the proc finished but it did and 'quit' returned error, but there are no ill effects and it's pretty rare
-            _log.warning("screen 'quit' failed with code %s", exitcode)
-        return exitcode == 0
+        proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'quit'], stdout=PIPE)
+        exitcode = proc.returncode
+        stdout = proc.stdout.decode('utf8')
+        if not self.finished() and exitcode != 0:
+            # there's a race here and we may not know the proc finished but it
+            # did and 'quit' returned error, but there are no ill effects and
+            # it's pretty unlikely
+            _log.warning("screen 'quit' failed with code %s; stdout=%s", exitcode, repr(stdout))
+        return exitcode == 0 or (exitcode == 1 and stdout.strip() == 'No screen session found')
 
     def kill(self):
         open_proc = self.started_proc
@@ -540,8 +556,8 @@ class TestCaseRunner(object):
                         if self.stuff_config.eof:
                             screener.stuff_eof()
                         _log.debug("[%x] waiting %s seconds for process to terminate", thread_id, self.throttle.processing_timeout)
-                        screener.await_proc(self.throttle.processing_timeout)
                     finally:
+                        screener.await_proc(self.throttle.processing_timeout)
                         if not screener.quit():
                             if not screener.finished():
                                 screener.kill()
@@ -652,6 +668,8 @@ def report(outcomes: List[TestCaseOutcome], report_type: str, ofile=sys.stderr):
                 print("  actual: {}".format(repr(outcome.actual_text)), file=ofile)
             else:
                 _log.debug("test case failure reported with message=diff but diff_action=%s", report_type)
+        else:
+            _log.debug("outcome: %s", outcome)
 
 
 class TestCasesConfig(NamedTuple):
