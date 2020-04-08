@@ -12,7 +12,7 @@ import hwsuite.question
 import hwsuite.build
 import hwsuite.tests
 from hwsuite.check import StuffConfig, Throttle, ConcurrencyManager, TestCaseRunner, TestCaseOutcome, CppChecker
-from hwsuite.check import TestCaseRunnerFactory, TestCasesConfig, ValgrindConfig, Result
+from hwsuite.check import TestCaseRunnerFactory, TestCasesConfig, ValgrindConfig, Result, ScreenRunnable
 
 hwsuite.tests.configure_logging()
 
@@ -250,9 +250,8 @@ class CppCheckerTest(TestCase):
     def test_valgrind_error(self):
         with tempfile.TemporaryDirectory() as proj_dir:
             hwsuite.init.do_init(proj_dir, hwsuite.init._DEFAULT_SAFETY_MODE, {})
-            q_dir = hwsuite.question._main_raw(proj_dir, 'q1')
+            q_dir = hwsuite.question._main_raw(proj_dir, 'q1', excludes='question,testcases')
             cpp_file = os.path.join(q_dir, 'main.cpp')
-            os.remove(os.path.join(q_dir, 'test-cases.json'))
             hwsuite.tests.write_text_file("""\
             #include <iostream>
             int main() {
@@ -279,3 +278,54 @@ class CppCheckerTest(TestCase):
             outcome = list(outcomes.values())[0]
             self.assertFalse(outcome.passed, "expect failed memcheck")
             self.assertTrue(outcome.message.startswith("memcheck"), "expect message includes 'memcheck'")
+
+    def test_dont_stuff_if_terminated(self):
+        with tempfile.TemporaryDirectory() as proj_dir:
+            hwsuite.init.do_init(proj_dir, hwsuite.init._DEFAULT_SAFETY_MODE, {})
+            q_dir = hwsuite.question._main_raw(proj_dir, 'q2', excludes='question,testcases')
+            cpp_file = os.path.join(q_dir, 'main.cpp')
+            hwsuite.tests.write_text_file("""\
+            #include <iostream>
+            #include <cassert>
+            using namespace std;
+            int main() {
+                char ch;
+                cin >> ch;
+                assert(ch == 'a');
+                cin >> ch;
+                assert(ch == 'b');
+                cin >> ch;
+                assert(ch == 'c');
+                return 0;
+            }
+            """, cpp_file)
+            hwsuite.tests.write_text_file("a\nz\nc\n", os.path.join(q_dir, '1-input.txt'))
+            hwsuite.tests.write_text_file('', os.path.join(q_dir, '1-expected.txt'))
+            hwsuite.build.build(proj_dir)
+            screen_runnables = []
+            class CustomTestCaseRunnerFactory(TestCaseRunnerFactory):
+
+                def __init__(self, throttle: Throttle, stuff_config: StuffConfig):
+                    super().__init__(throttle, stuff_config)
+
+                def create(self, executable: str):
+                    runner = super().create(executable)
+                    def _runner(procdef):
+                        runnable = ScreenRunnable(procdef)
+                        screen_runnables.append(runnable)
+                        return runnable
+                    runner.screen_runnable_factory = _runner
+                    return runner
+
+            runner_factory = CustomTestCaseRunnerFactory(Throttle.default(), StuffConfig.default())
+            checker = CppChecker(runner_factory, 1)
+            outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig(1, None))
+            self.assertEqual(1, len(screen_runnables))
+            screen_runnable = screen_runnables[0]
+            self.assertEqual(1, screen_runnable.num_stuffs, "num stuffs by ScreenRunnable")
+            self.assertIsNotNone(outcomes)
+            self.assertIsInstance(outcomes, dict)
+            self.assertEqual(1, len(outcomes))
+            outcome = list(outcomes.values())[0]
+
+

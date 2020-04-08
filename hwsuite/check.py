@@ -288,6 +288,7 @@ class ScreenRunnable(object):
         self.started_proc: Optional[subprocess.Popen] = None
         self.completed_proc: Optional[subprocess.CompletedProcess] = None
         self.logfile = os.path.join(self.procdef.cwd, 'screenlog.0')
+        self.num_stuffs = 0
 
     def __str__(self):
         return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
@@ -326,6 +327,7 @@ class ScreenRunnable(object):
             stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
             msg = f"[{thread_id}] stuff exit code {proc.returncode} feeding line {line_num}; stderr={repr(stderr)}; stdout={repr(stdout)}"
             _log.info(msg)
+        self.num_stuffs += 1
         return proc
 
     def stuff_eof(self) -> subprocess.CompletedProcess:
@@ -464,6 +466,7 @@ class TestCaseRunner(object):
         self.processing_timeout: float = 5.0
         self.require_screen = require_screen
         self.valgrind_config = valgrind_config
+        self.screen_runnable_factory = ScreenRunnable
 
     def _pause(self, duration=None):
         time.sleep(self.throttle.pause_duration if duration is None else duration)
@@ -551,7 +554,7 @@ class TestCaseRunner(object):
         with tempfile.TemporaryDirectory() as tempdir:
             procdef = ProcessDefinition(self.executable, test_case.args, tempdir, test_case.env_dict())
             if use_screen:
-                screener = ScreenRunnable(procdef)
+                screener = self.screen_runnable_factory(procdef)
                 with screener.start():
                     self._pause(self.throttle.pause_duration * 2)
                     _log.debug("[%x] feeding lines to %s from %s", thread_id, os.path.basename(self.executable),
@@ -596,7 +599,8 @@ class TestCaseRunner(object):
 
 class TestCaseRunnerFactory(object):
 
-    def __init__(self, throttle: Throttle, stuff_config: StuffConfig, require_screen: str = 'auto', valgrind_config: ValgrindConfig = VALGRIND_DISABLED):
+    def __init__(self, throttle: Throttle, stuff_config: StuffConfig, require_screen: str = 'auto',
+                 valgrind_config: ValgrindConfig = VALGRIND_DISABLED):
         self.stuff_config = stuff_config
         self.throttle = throttle
         self.require_screen = require_screen
