@@ -11,6 +11,8 @@ import logging
 import os.path
 import sys
 from argparse import ArgumentParser
+from typing import Iterable, Optional
+
 import hwsuite
 
 
@@ -46,6 +48,13 @@ int main() {{
 }}
 """
 
+_CAT_CMAKELISTS = 'cmakelists'
+_CAT_QUESTIONMD = 'question'
+_CAT_MAIN = 'main'
+_CAT_TESTCASES = 'testcases'
+
+_FILE_CATEGORIES = {_CAT_CMAKELISTS, _CAT_QUESTIONMD, _CAT_MAIN, _CAT_TESTCASES}
+
 
 def _write_text(text: str, output_file: str):
     with open(output_file, 'w') as ofile:
@@ -54,8 +63,10 @@ def _write_text(text: str, output_file: str):
 
 class Questioner(object):
 
-    def __init__(self, proj_dir: str):
+    def __init__(self, proj_dir: str, includes: Iterable[str]=tuple(), excludes: Iterable[str]=tuple()):
         self.proj_dir = proj_dir
+        self.includes = frozenset(includes)
+        self.excludes = frozenset(excludes)
 
     def detect_next_qname(self) -> str:
         child_dirs = []
@@ -88,12 +99,19 @@ class Questioner(object):
         model.update(question_model)
         _write_text(template.format(**model), output_file)
 
+    def _is_populable(self, category: str):
+        if self.includes:
+            return category in self.includes
+        return category not in self.excludes
 
     def populate(self, q_dir):
         q_name = os.path.basename(q_dir)
-        self._render(_CMAKELISTSTXT_TEMPLATE, q_name, os.path.join(q_dir, 'CMakeLists.txt'))
-        self._render(_QUESTIONMD_TEMPLATE, q_name, os.path.join(q_dir, 'question.md'))
-        self._render(_MAINCPP_TEMPLATE, q_name, os.path.join(q_dir, 'main.cpp'))
+        if self._is_populable(_CAT_CMAKELISTS):
+            self._render(_CMAKELISTSTXT_TEMPLATE, q_name, os.path.join(q_dir, 'CMakeLists.txt'))
+        if self._is_populable(_CAT_QUESTIONMD):
+            self._render(_QUESTIONMD_TEMPLATE, q_name, os.path.join(q_dir, 'question.md'))
+        if self._is_populable(_CAT_MAIN):
+            self._render(_MAINCPP_TEMPLATE, q_name, os.path.join(q_dir, 'main.cpp'))
         test_cases = {
             "input": "{nombre}\n",
             "input_file": "input-template.txt",
@@ -106,9 +124,9 @@ class Questioner(object):
                 ["jennifer"],
             ]
         }
-        _write_text(json.dumps(test_cases, indent=2), os.path.join(q_dir, 'test-cases.json'))
+        if self._is_populable(_CAT_TESTCASES):
+            _write_text(json.dumps(test_cases, indent=2), os.path.join(q_dir, 'test-cases.json'))
         _log.debug("populated directory %s", q_dir)
-
 
     def config_root_proj(self, q_name):
         root_cmakelists_file = os.path.join(self.proj_dir, 'CMakeLists.txt')
@@ -117,10 +135,16 @@ class Questioner(object):
         _log.debug("appended subdirectory line to %s", root_cmakelists_file)
 
 
-def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE) -> str:
+def _parse_cludes(listing: Optional[str]) -> Iterable[str]:
+    if listing is None:
+        return frozenset()
+    return frozenset([item.strip() for item in listing.split(",")])
+
+
+def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE, includes: Optional[str]=None, excludes: Optional[str]=None) -> str:
     """Does the work you want and returns the path of the new directory."""
     proj_dir = os.path.abspath(proj_dir or hwsuite.find_proj_root())
-    questioner = Questioner(proj_dir)
+    questioner = Questioner(proj_dir, includes=_parse_cludes(includes), excludes=_parse_cludes(excludes))
     q_name = q_name if q_name is not None else questioner.detect_next_qname()
     if os.path.isabs(q_name):
         raise ValueError("'name' should be basename or relative path, not an absolute path")
@@ -135,7 +159,7 @@ def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE) -> str:
 
 
 def _main(args: argparse.Namespace) -> int:
-    _main_raw(args.project_dir, args.name, args.mode)
+    _main_raw(args.project_dir, args.name, args.mode, args.includes, args.excludes)
     return 0
 
 
@@ -145,6 +169,8 @@ def main():
     hwsuite.add_logging_options(parser)
     parser.add_argument("--mode", default=_DEFAULT_MODE, choices=('safe', 'overwrite', 'replace'))
     parser.add_argument("--project-dir", metavar="DIR", help="project directory; default is working directory")
+    parser.add_argument("--include", metavar="CATEGORY", help=f"comma-separated list of file categories to include; choices are {_FILE_CATEGORIES}")
+    parser.add_argument("--exclude", metavar="CATEGORY", help=f"comma-separated list of file categories to exclude; choices are {_FILE_CATEGORIES}")
     args = parser.parse_args()
     hwsuite.configure_logging(args)
     try:

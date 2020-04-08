@@ -32,7 +32,7 @@ class WhereamiException(MessageworthyException):
     pass
 
 
-class CommandException(Exception):
+class CommandException(MessageworthyException):
 
     pass
 
