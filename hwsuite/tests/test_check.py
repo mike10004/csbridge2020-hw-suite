@@ -322,10 +322,11 @@ class CppCheckerTest(TestCase):
             outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig(1, None))
             self.assertEqual(1, len(screen_runnables))
             screen_runnable = screen_runnables[0]
-            self.assertEqual(1, screen_runnable.num_stuffs, "num stuffs by ScreenRunnable")
+            self.assertEqual(2, screen_runnable.num_stuffs, "num stuffs by ScreenRunnable")
             self.assertIsNotNone(outcomes)
             self.assertIsInstance(outcomes, dict)
             self.assertEqual(1, len(outcomes))
             outcome = list(outcomes.values())[0]
-
+            print(outcome)
+            self.assertEqual('early', outcome.message)
 

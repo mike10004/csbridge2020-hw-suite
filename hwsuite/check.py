@@ -180,6 +180,10 @@ class ScreenStateException(Exception):
     pass
 
 
+class EarlyTerminationException(ScreenStateException):
+    pass
+
+
 class PollConfig(NamedTuple):
 
     interval: float
@@ -291,7 +295,7 @@ class ScreenRunnable(object):
         self.num_stuffs = 0
 
     def __str__(self):
-        return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
+        return f"ScreenRunnable<{self.procdef},launched={self.launched()},finished={self.finished()}>"
 
     def launched(self) -> bool:
         return not self.finished() and self.started_proc is not None
@@ -302,11 +306,19 @@ class ScreenRunnable(object):
         self.started_proc = subprocess.Popen(cmd, env=self.procdef.env, cwd=self.procdef.cwd, stdout=PIPE, stderr=PIPE)
         return self.started_proc
 
+    def _started_to_completed(self, stdout='', stderr='') -> subprocess.CompletedProcess:
+        assert self.started_proc is not None, "process must be started before calling this method"
+        returncode = self.started_proc.returncode
+        assert returncode is not None, "only call this if started process has terminated"
+        args = self.started_proc.args
+        self.completed_proc = subprocess.CompletedProcess(args, returncode, stdout, stderr)
+        return self.completed_proc
+
     def await_proc(self, timeout: float):
         _log.debug("await_proc %s with timeout %s", self.started_proc, timeout)
         try:
             self.started_proc.wait(timeout)
-            self.completed_proc = subprocess.CompletedProcess(self.started_proc.args, self.started_proc.returncode, '', '')
+            self._started_to_completed()
             self.started_proc = None
             _log.debug("screen process completed with exit code %s", self.completed_proc.returncode)
         except subprocess.TimeoutExpired:
@@ -316,27 +328,39 @@ class ScreenRunnable(object):
     def stuff(self, line: str, cfg: StuffConfig, line_num: int=0) -> subprocess.CompletedProcess:
         """Sends a line of text to process standard input.
         This uses the screen command 'stuff'. The line number is used only for log messages."""
-        if not self.launched() or self.finished():
+        if not self.launched():
             raise ScreenStateException(str(self))
+        if self.finished(force_check=True):
+            raise EarlyTerminationException(str(self))
         thread_id = threading.current_thread().ident
         # note: it is important for 'stuff' command that line has terminal newline char
         line = cfg.format_line(line)
         _log.debug("[%s] feeding line %s to process: %s", thread_id, line_num, repr(line))
-        proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)
-        if proc.returncode != 0:
-            stdout, stderr = proc.stdout.decode('utf8'), proc.stderr.decode('utf8')
-            msg = f"[{thread_id}] stuff exit code {proc.returncode} feeding line {line_num}; stderr={repr(stderr)}; stdout={repr(stdout)}"
+        stuff_proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', line], stdout=PIPE, stderr=PIPE)
+        if stuff_proc.returncode != 0:
+            stdout, stderr = stuff_proc.stdout.decode('utf8'), stuff_proc.stderr.decode('utf8')
+            msg = f"[{thread_id}] stuff exit code {stuff_proc.returncode} feeding line {line_num}; stderr={repr(stderr)}; stdout={repr(stdout)}"
             _log.info(msg)
         self.num_stuffs += 1
-        return proc
+        return stuff_proc
 
     def stuff_eof(self) -> subprocess.CompletedProcess:
+        if not self.launched() or self.finished(force_check=True):
+            raise ScreenStateException(str(self))
         proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'stuff', "^D"], stdout=PIPE, stderr=PIPE)
         if proc.returncode != 0:
             _log.info("sending EOF to process failed with code %s", proc.returncode)
         return proc
 
-    def finished(self) -> bool:
+    def finished(self, force_check: bool=False) -> bool:
+        if force_check:
+            if not self.launched():
+                return False
+            returncode = self.started_proc.poll()
+            if returncode is None:
+                return False
+            self._started_to_completed()
+            return True
         return self.completed_proc is not None
 
     def quit(self) -> bool:
@@ -345,6 +369,9 @@ class ScreenRunnable(object):
         if self.finished():
             return True
         _log.debug("quitting screen process")
+        if self.started_proc.poll() is not None:
+            self._started_to_completed()
+            return True
         proc = subprocess.run(['screen', '-S', self.case_id, '-X', 'quit'], stdout=PIPE)
         exitcode = proc.returncode
         stdout = proc.stdout.decode('utf8')
@@ -563,7 +590,12 @@ class TestCaseRunner(object):
                         LogWatcher(screener.logfile).await_output(self.throttle.await)
                         for i, line in enumerate(input_lines):
                             self._pause()
-                            proc = screener.stuff(line, self.stuff_config, i + 1)
+                            try:
+                                proc = screener.stuff(line, self.stuff_config, i + 1)
+                            except EarlyTerminationException:
+                                actual_text_ = screener.logfile_text(ignore_failure=True)
+                                _log.debug("early termination detected with code %s", screener.completed_proc.returncode)
+                                return make_outcome(False, expected_text, actual_text_, "early")
                             if proc.returncode != 0:
                                 actual_text_ = screener.logfile_text(ignore_failure=True)
                                 return make_outcome(False, expected_text, actual_text_, "stuff")
@@ -659,31 +691,30 @@ def report(outcomes: List[TestCaseOutcome], report_type: str, ofile=sys.stderr):
         else:
             input_name = os.path.basename(outcome.test_case.input_file)
         print(f"{q_name}: {input_name}: {outcome.message}")
-        if outcome.message == 'diff':
-            if report_type == 'diff':
-                # expected_text can't be None here, or outcome.message would not be 'diff'
-                expected = outcome.expected_text.split("\n")
-                actual = outcome.actual_text.split("\n")
-                delta = difflib.context_diff(expected, actual)
-                for line in delta:
-                    print(line, file=ofile)
-            elif report_type == 'full':
-                print("=================================================", file=ofile)
-                print("EXPECTED", file=ofile)
-                print("=================================================", file=ofile)
-                print(outcome.expected_text, end="", file=ofile)
-                print("=================================================", file=ofile)
-                print("=================================================", file=ofile)
-                print("ACTUAL", file=ofile)
-                print("=================================================", file=ofile)
-                print(outcome.actual_text, end="", file=ofile)
-                print("=================================================", file=ofile)
-            elif report_type == 'repr':
-                print("expected: {}".format(repr(outcome.expected_text)), file=ofile)
-                print("  actual: {}".format(repr(outcome.actual_text)), file=ofile)
-            else:
-                _log.debug("test case failure reported with message=diff but diff_action=%s", report_type)
+        if report_type == 'diff':
+            # expected_text can't be None here, or outcome.message would not be 'diff'
+            expected = outcome.expected_text.split("\n")
+            actual = outcome.actual_text.split("\n")
+            delta = difflib.context_diff(expected, actual)
+            for line in delta:
+                print(line, file=ofile)
+        elif report_type == 'full':
+            print("=================================================", file=ofile)
+            print("EXPECTED", file=ofile)
+            print("=================================================", file=ofile)
+            print(outcome.expected_text, end="", file=ofile)
+            print("=================================================", file=ofile)
+            print("=================================================", file=ofile)
+            print("ACTUAL", file=ofile)
+            print("=================================================", file=ofile)
+            print(outcome.actual_text, end="", file=ofile)
+            print("=================================================", file=ofile)
+        elif report_type == 'repr':
+            print("expected: {}".format(repr(outcome.expected_text)), file=ofile)
+            print("  actual: {}".format(repr(outcome.actual_text)), file=ofile)
         else:
+            _log.debug("test case failure reported with message=diff but diff_action=%s", report_type)
+        if report_type != 'diff':
             _log.debug("outcome: %s", outcome)
 
 

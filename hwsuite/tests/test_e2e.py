@@ -25,7 +25,7 @@ class EndToEndTest(TestCase):
             proj_dir = os.path.join(tempdir, 'hw-example')
             os.makedirs(proj_dir)
             hwsuite.init.do_init(proj_dir, safety_mode='ignore', hwconfig={'question_model':{'project_name': 'hw_example'}})
-            q_args = Namespace(project_dir=proj_dir, name=None, mode='safe')
+            q_args = Namespace(project_dir=proj_dir, name=None, mode='safe', includes=None, excludes=None)
             ecode = hwsuite.question._main(q_args)
             self.assertEqual(0, ecode, "question exit code")
             q1_dir = os.path.join(proj_dir, 'q1')
