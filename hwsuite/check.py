@@ -34,6 +34,18 @@ _TEST_CASES_CHOICES = ('auto', 'require', 'existing')
 _ERR_TEST_CASE_FAILURES = 3
 _STUFF_MODES = ('auto', 'strict')
 
+# Some characters have special meaning for the GNU screen 'stuff' command.
+# For some, we can octal-escape them, and others require different handling.
+# This dict maps special chars to their special escapes or to None, where None
+# means that an octal escape can be used.
+_STUFF_SPECIALS = {
+    '^': None,
+    '#': None,
+    '$': '\$'
+}
+_STUFF_SPECIALS_KEYS = frozenset(_STUFF_SPECIALS.keys())
+
+
 def read_file_text(pathname: str, ignore_failure=False) -> Optional[str]:
     """Reads text from a file, possibly ignoring errors.
     Returns file text or None if failure did occur but was ignored.
@@ -41,11 +53,14 @@ def read_file_text(pathname: str, ignore_failure=False) -> Optional[str]:
     try:
         with open(pathname, 'r') as ifile:
             return ifile.read()
-    except IOError:
+    except IOError as e:
         if not ignore_failure:
             raise
+        else:
+            _log.debug("file read failed: %s", e)
 
-def read_file_lines(pathname: str, rstrip=None) -> List[str]:
+
+def read_file_lines(pathname: str, rstrip: Optional[str]=None) -> List[str]:
     def xform(line):
         return line if rstrip is None else line.rstrip(rstrip)
     with open(pathname, 'r') as ifile:
@@ -64,7 +79,8 @@ class TestCase(NamedTuple):
         return None if self.env is None else dict(self.env)
 
     @staticmethod
-    def create(input_file: Optional[str], expected_file: Optional[str], env: Optional[Dict[str, str]]=None, args: Optional[Sequence[str]]=None, exit_code=0):
+    def create(input_file: Optional[str], expected_file: Optional[str], env: Optional[Dict[str, str]]=None,
+               args: Optional[Sequence[str]]=None, exit_code=0):
         env = None if env is None else frozenset(env.items())
         args = tuple() if args is None else tuple(args)
         return TestCase(input_file, expected_file, env, args, exit_code)
@@ -75,7 +91,7 @@ class TestCase(NamedTuple):
         return exit_code == self.exit_code
 
 
-def _read_env(env_file) -> Dict[str, str]:
+def _read_env(env_file: str) -> Dict[str, str]:
     env = {}
     with open(env_file, 'r') as ifile:
         for line in ifile:
@@ -88,7 +104,7 @@ def _read_env(env_file) -> Dict[str, str]:
     return env
 
 
-def _derive_counterparts(expected_pathname, suppress_deprecation=False) -> Tuple[str, str, str]:
+def _derive_counterparts(expected_pathname: str, suppress_deprecation: bool=False) -> Tuple[str, str, str]:
     """Returns a tuple of basenames of the input, env, and args file counterparts to the given expected output file pathname."""
     basename = os.path.basename(expected_pathname)
     def _derive(token, suffix):
@@ -187,11 +203,11 @@ class LogWatcher(object):
         self.pathname = pathname
         self.requirement = requirement
 
-    def _satisfied(self, text):
+    def _satisfied(self, text: str) -> bool:
         req = self.requirement or str.strip
-        return req(text)
+        return not not req(text)
 
-    def await_output(self, poll_config, on_timeout='return'):
+    def await_output(self, poll_config: PollConfig, on_timeout:str='return'):
         num_polls = 0
         text = None
         while num_polls < poll_config.limit:
@@ -201,7 +217,7 @@ class LogWatcher(object):
             time.sleep(poll_config.interval)
             num_polls += 1
         if on_timeout == 'raise':
-            raise TimeoutError()
+            raise TimeoutError(f"log watcher timeout after {num_polls} with {poll_config}")
         return text
 
 
@@ -211,18 +227,10 @@ def get_arg(args: argparse.Namespace, attr_name: str, default_value):
     except AttributeError:
         return default_value
 
-_STUFF_SPECIALS = {
-    '^': None,
-    '#': None,
-    '$': '\$'
-}
-
-_STUFF_SPECIALS_KEYS = frozenset(_STUFF_SPECIALS.keys())
-
 
 class StuffContentException(ValueError):
-
     pass
+
 
 class StuffConfig(NamedTuple):
 
@@ -284,17 +292,17 @@ class ScreenRunnable(object):
     def __str__(self):
         return f"ScreenRunnable<{self.procdef},launched={self.launched},finished={self.finished()}>"
 
-    def launched(self):
+    def launched(self) -> bool:
         return not self.finished() and self.started_proc is not None
 
-    def start(self):
+    def start(self) -> subprocess.Popen:
         # TODO use -Logfile filename to make this more stable
         cmd = ['screen', '-L', '-S', self.case_id, '-D', '-m', '--'] + self.procdef.to_cmd()
         self.started_proc = subprocess.Popen(cmd, env=self.procdef.env, cwd=self.procdef.cwd, stdout=PIPE, stderr=PIPE)
         return self.started_proc
 
     def await_proc(self, timeout: float):
-        _log.debug("await_proc with timeout %s", timeout)
+        _log.debug("await_proc %s with timeout %s", self.started_proc, timeout)
         try:
             self.started_proc.wait(timeout)
             self.completed_proc = subprocess.CompletedProcess(self.started_proc.args, self.started_proc.returncode, '', '')
@@ -326,7 +334,7 @@ class ScreenRunnable(object):
             _log.info("sending EOF to process failed with code %s", proc.returncode)
         return proc
 
-    def finished(self):
+    def finished(self) -> bool:
         return self.completed_proc is not None
 
     def quit(self) -> bool:
@@ -345,7 +353,7 @@ class ScreenRunnable(object):
             _log.warning("screen 'quit' failed with code %s; stdout=%s", exitcode, repr(stdout))
         return exitcode == 0 or (exitcode == 1 and stdout.strip() == 'No screen session found')
 
-    def kill(self):
+    def kill(self) -> Optional[int]:
         open_proc = self.started_proc
         if open_proc is None:
             _log.info("proc not retained; maybe already finished? self.finished=%s", self.finished())
@@ -358,7 +366,7 @@ class ScreenRunnable(object):
         _log.info("after term/kill attempt, returncode = %s", open_proc.returncode)
         return open_proc.returncode
 
-    def logfile_text(self, ignore_failure=False):
+    def logfile_text(self, ignore_failure: bool=False) -> str:
         return read_file_text(self.logfile, ignore_failure)
 
 
@@ -389,11 +397,11 @@ class ValgrindConfig(NamedTuple):
             return test_case.input_file is None
         raise ValueError("applicability is not recognized in this config object")
 
-    def build_command(self, subject_cmd: Sequence[str]):
+    def build_command(self, subject_cmd: Sequence[str]) -> List[str]:
         return [self.valgrind_executable] + list(self.options) + ['--'] + list(subject_cmd)
 
     @staticmethod
-    def from_options(args: argparse.Namespace):
+    def from_options(args: argparse.Namespace) -> 'ValgrindConfig':
         # TODO parse valgrind options other than applicability
         valgrind_spec = args.valgrind or ''
         executable = 'valgrind'
@@ -418,7 +426,7 @@ class ValgrindConfig(NamedTuple):
                 executable = values[-1]
         return ValgrindConfig(executable, options, applicability, verbosity)
 
-    def is_quiet(self):
+    def is_quiet(self) -> bool:
         return self.verbosity == 'quiet'
 
 
@@ -436,10 +444,12 @@ class ValgrindRunner(object):
         _log.debug("valgrind terminated with code %s", proc.returncode)
         return proc
 
+
 class Result(NamedTuple):
 
     exit_code: int
     text: Optional[str]
+
 
 # noinspection PyMethodMayBeStatic
 class TestCaseRunner(object):
@@ -458,6 +468,7 @@ class TestCaseRunner(object):
     def _pause(self, duration=None):
         time.sleep(self.throttle.pause_duration if duration is None else duration)
 
+    # noinspection PyUnusedLocal
     def _transform_expected(self, expected_text: str, actual_text: str) -> List[str]:
         """Transforms expected text into one or more strings suitable for comparison to actual text.
 
@@ -473,6 +484,7 @@ class TestCaseRunner(object):
             texts.append(expected_text.expandtabs(8))
         return texts
 
+    # noinspection PyUnusedLocal
     def _transform_actual(self, expected_text: str, actual_text: str) -> List[str]:
         """Transforms screenlog text into one or more strings suitable for comparison to expected text.
 
@@ -512,7 +524,6 @@ class TestCaseRunner(object):
             return True
         # 'auto'
         return test_case.input_file is not None
-
 
     def run_test_case(self, test_case: TestCase) -> TestCaseOutcome:
         thread_id = threading.current_thread().ident
