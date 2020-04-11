@@ -159,7 +159,7 @@ def _main_raw(proj_dir=None, q_name=None, mode=_DEFAULT_MODE, includes: Optional
 
 
 def _main(args: argparse.Namespace) -> int:
-    _main_raw(args.project_dir, args.name, args.mode, args.includes, args.excludes)
+    _main_raw(args.project_dir, args.name, args.mode, args.include, args.exclude)
     return 0
 
 
