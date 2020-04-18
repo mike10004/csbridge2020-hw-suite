@@ -53,4 +53,7 @@ class InitTest(TestCase):
             with open(hwconfig_file, 'r') as ifile:
                 config = json.load(ifile)
             self.assertDictEqual(expected_config, config)
+            if 'name' in _main_kwargs:
+                cmakelists_lines = [line.rstrip() for line in hwsuite.tests.read_file_lines(os.path.join(proj_root, "CMakeLists.txt"))]
+                self.assertIn(f"project({_main_kwargs['name']})", cmakelists_lines)
 
