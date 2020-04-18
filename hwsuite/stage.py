@@ -209,9 +209,9 @@ def require_prefix(cfg, proj_root) -> str:
     prefix = cfg.get('stage_prefix', None)
     if prefix is None:
         prefix = suggest_prefix(cfg, proj_root)
-    cfg['stage_prefix'] = prefix
-    hwsuite.store_config(cfg, proj_root=proj_root)
-    _log.info("persisted prefix %s to project config", prefix)
+        cfg['stage_prefix'] = prefix
+        hwsuite.store_config(cfg, proj_root=proj_root)
+        _log.info("persisted prefix %s to project config", prefix)
     return prefix
 
 
