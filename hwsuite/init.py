@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+
 import json
 import os
 import argparse
 import sys
 from typing import Dict, Any
-
 import hwsuite
+from hwsuite import GitRunner
 import logging
 
 
@@ -64,6 +65,13 @@ def _main(proj_root, safety_mode: str=_DEFAULT_SAFETY_MODE, name: str=None, auth
     hwconfig = {
         'question_model': q_model
     }
+    if author is None:
+        if os.path.isdir(os.path.join(proj_root, '.git')):
+            try:
+                author = GitRunner().run(['config', 'user.email']).rstrip()
+                _log.info("acquired email address from git config: %s", author)
+            except Exception as e:
+                _log.info(".git directory exists but git execution to find author failed due to %s", e)
     if author is not None:
         q_model['author'] = author
     if name is not None:
