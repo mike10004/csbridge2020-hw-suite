@@ -81,7 +81,11 @@ class TestCase(NamedTuple):
     @staticmethod
     def create(input_file: Optional[str], expected_file: Optional[str], env: Optional[Dict[str, str]]=None,
                args: Optional[Sequence[str]]=None, exit_code=0):
-        env = None if env is None else frozenset(env.items())
+        if env is not None:
+            if isinstance(env, dict):
+                env = frozenset(env.items())
+            else:
+                env = frozenset(env)
         args = tuple() if args is None else tuple(args)
         return TestCase(input_file, expected_file, env, args, exit_code)
 
@@ -89,6 +93,11 @@ class TestCase(NamedTuple):
     def check_exit_code(self, exit_code: int) -> bool:
         """Return True iff the exit code is what is expected for this test case."""
         return exit_code == self.exit_code
+
+    def filter_key(self):
+        if not self.expected_file:
+            return ''
+        return _derive_counterparts(self.expected_file).identifier
 
 
 def _read_env(env_file: str) -> Dict[str, str]:
@@ -104,36 +113,43 @@ def _read_env(env_file: str) -> Dict[str, str]:
     return env
 
 
-def _derive_counterparts(expected_pathname: str, suppress_deprecation: bool=False) -> Tuple[str, str, str]:
-    """Returns a tuple of basenames of the input, env, and args file counterparts to the given expected output file pathname."""
+class TestCaseFilenameSet(NamedTuple):
+
+    identifier: str
+    expected: str
+    input: str
+    env: str
+    args: str
+
+
+def _derive_counterparts(expected_pathname: str) -> TestCaseFilenameSet:
+    """Returns a filename set that contains the counterparts to the given expected output file pathname."""
     basename = os.path.basename(expected_pathname)
-    def _derive(token, suffix):
+    def _derive(token, suffix) -> TestCaseFilenameSet:
         if suffix:
             identifier = basename[:len(basename) - len(token)]
-            return identifier + '-input.txt', identifier + '-env.txt', identifier + '-args.txt'
+            return TestCaseFilenameSet(identifier, basename, identifier + '-input.txt', identifier + '-env.txt', identifier + '-args.txt')
         else:
             identifier = basename[len(token):]
-            return 'input' + identifier, 'env' + identifier, 'args' + identifier
+            return TestCaseFilenameSet(os.path.splitext(identifier)[0], basename, 'input-' + identifier, 'env-' + identifier, 'args-' + identifier)
     if basename == 'expected.txt':
-        return 'input.txt', 'env.txt', 'args.txt'
+        return TestCaseFilenameSet('', basename, 'input.txt', 'env.txt', 'args.txt')
     elif basename.endswith("-expected.txt"):
         return _derive("-expected.txt", True)
     elif basename.endswith("-expected-output.txt", True):
         return _derive("-expected-output.txt", True)
-    elif basename.startswith("expected-output"):
-        if not suppress_deprecation:
-            _log.warning("use of prefix 'expected-output' is deprecated: %s; use suffix -expected.txt instead", basename)
-        return _derive("expected-output", False)
+    elif basename.startswith("expected-"):
+        return _derive("expected-", False)
     raise ValueError("basename pattern not recognized; should be something like *-input.txt or *-expected.txt")
 
 
 def _create_test_case(expected_pathname: str) -> TestCase:
     basename = os.path.basename(expected_pathname)
-    input_basename, env_basename, args_basename = _derive_counterparts(basename)
+    filenames: TestCaseFilenameSet = _derive_counterparts(basename)
     parent = os.path.dirname(expected_pathname)
-    input_file = os.path.join(parent, input_basename)
-    env_file = os.path.join(parent, env_basename)
-    args_file = os.path.join(parent, env_basename)
+    input_file = os.path.join(parent, filenames.input)
+    env_file = os.path.join(parent, filenames.env)
+    args_file = os.path.join(parent, filenames.args)
     if not os.path.exists(input_file):
         input_file = None
     env = None
@@ -418,6 +434,7 @@ class ValgrindConfig(NamedTuple):
     verbosity: str            # values: normal, quiet
 
     def is_applicable(self, test_case: TestCase) -> bool:
+        _log.debug("deciding whether to valgrind with applicability=%s and input=%s", self.applicability, test_case.input_file)
         if self.applicability == 'always':
             return True
         if self.applicability == 'never':
@@ -453,6 +470,8 @@ class ValgrindConfig(NamedTuple):
                 verbosity = values[-1]
             elif param_name == 'executable':
                 executable = values[-1]
+            else:
+                raise ValueError("unknown valgrind param; valid are applicability, verbosity, executable")
         return ValgrindConfig(executable, options, applicability, verbosity)
 
     def is_quiet(self) -> bool:
@@ -467,9 +486,10 @@ class ValgrindRunner(object):
     def __init__(self, config: ValgrindConfig):
         self.config = config
 
-    def run(self, cmd: List[str]) -> subprocess.CompletedProcess:
+    def run(self, cmd: List[str], env: Optional[Dict[str, str]], cwd: str) -> subprocess.CompletedProcess:
         valgrind_cmd = self.config.build_command(cmd)
-        proc = subprocess.run(valgrind_cmd, stdout=PIPE, stderr=PIPE)
+        _log.debug("running %s with environment %s", valgrind_cmd, env)
+        proc = subprocess.run(valgrind_cmd, stdout=PIPE, stderr=PIPE, env=env, cwd=cwd)
         _log.debug("valgrind terminated with code %s", proc.returncode)
         return proc
 
@@ -613,13 +633,17 @@ class TestCaseRunner(object):
             else:
                 # if we don't need to send/capture input, then we can just execute
                 cmd = [self.executable] + list(test_case.args)
-                completed_proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, cwd=tempdir, env=test_case.env_dict())
+                env = test_case.env_dict()
+                _log.debug("running %s with environment %s", cmd, env)
+                completed_proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, cwd=tempdir,
+                                                env=env)
                 exit_code = completed_proc.returncode
+                _log.debug("terminated with code %s", exit_code)
                 output = completed_proc.stdout.decode('utf8')
                 # TODO log stderr
                 if test_case.check_exit_code(completed_proc.returncode):
                     if self.valgrind_config.is_applicable(test_case):
-                        valgrind_proc = ValgrindRunner(self.valgrind_config).run(cmd)
+                        valgrind_proc = ValgrindRunner(self.valgrind_config).run(cmd, env=env, cwd=tempdir)
                         if valgrind_proc.returncode != 0:
                             if not self.valgrind_config.is_quiet():
                                 _log.info("valgrind memcheck detected leak:\n%s\n", valgrind_proc.stderr.decode('utf8'))
@@ -724,10 +748,15 @@ class TestCasesConfig(NamedTuple):
     filter_pattern: Optional[str]
 
     def matches(self, test_case: TestCase):
-        if self.filter_pattern is None or test_case.input_file is None:
+        if self.filter_pattern is None:
             return True
-        filename = os.path.basename(test_case.input_file)
-        return fnmatch.fnmatch(filename, self.filter_pattern)
+        if test_case.expected_file is None:
+            if test_case.input_file is not None:
+                filename = os.path.basename(test_case.input_file)
+                return fnmatch.fnmatch(filename, self.filter_pattern)
+            return False
+        identifier = _derive_counterparts(test_case.expected_file).identifier
+        return fnmatch.fnmatch(identifier, self.filter_pattern)
 
 
 class CppChecker(object):

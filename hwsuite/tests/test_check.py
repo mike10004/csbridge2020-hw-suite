@@ -92,18 +92,27 @@ Please enter a line of text:
         outcome = runner._check(Result(0, expected_text), Result(0, actual_text), to_outcome)
         self.assertTrue(outcome.passed, f"expect passed for {outcome}")
 
-    def test__derive_counterparts(self):
+    def test__derive_counterparts_identifier(self):
         test_cases = [
-            ('/path/to/dir/expected-outputABC.txt', 'inputABC.txt', 'envABC.txt', 'argsABC.txt'),
-            ('/path/to/dir/expected-output-ABC.txt', 'input-ABC.txt', 'env-ABC.txt', 'args-ABC.txt'),
-            ('/path/to/dir/expected-output01.txt', 'input01.txt', 'env01.txt', 'args01.txt'),
+            ('/path/to/dir/expected-ABC.txt', 'ABC'),
+            ('/path/to/dir/1-expected.txt', '1'),
+            ('/path/to/dir/def-expected-output.txt', 'def'),
+        ]
+        for argpath, expected_identifier in test_cases:
+            with self.subTest():
+                filenames = check._derive_counterparts(argpath)
+                self.assertEqual(expected_identifier, filenames.identifier)
+
+    def test__derive_counterparts_filenames(self):
+        test_cases = [
+            ('/path/to/dir/expected-ABC.txt', 'input-ABC.txt', 'env-ABC.txt', 'args-ABC.txt'),
             ('/path/to/dir/1-expected.txt', '1-input.txt', '1-env.txt', '1-args.txt'),
             ('/path/to/dir/def-expected-output.txt', 'def-input.txt', 'def-env.txt', 'def-args.txt'),
         ]
         for argpath, inbase, envbase, argsbase in test_cases:
             with self.subTest():
-                actual = check._derive_counterparts(argpath, True)
-                self.assertTupleEqual((inbase, envbase, argsbase), actual)
+                filenames = check._derive_counterparts(argpath)
+                self.assertTupleEqual((inbase, envbase, argsbase), (filenames.input, filenames.env, filenames.args))
 
 
 class UnitTestConcurrencyManager(ConcurrencyManager):
