@@ -49,7 +49,8 @@ def do_init(proj_dir: str, safety_mode: str, hwconfig: Dict[str, Any], cfg_filen
     cfg_pathname = os.path.join(proj_dir, cfg_filename)
     init_file(cfg_pathname, safety_mode, json.dumps(hwconfig, indent=2))
     cmakelists_pathname = os.path.join(proj_dir, 'CMakeLists.txt')
-    cmakelists_text = _ROOT_CMAKELISTS_TXT_TEMPLATE.format(project_name=hwconfig.get('name', 'hw'))
+    project_name = hwconfig.get('question_model', {}).get('project_name', 'hw')
+    cmakelists_text = _ROOT_CMAKELISTS_TXT_TEMPLATE.format(project_name=project_name)
     init_file(cmakelists_pathname, safety_mode, cmakelists_text)
     gitignore_pathname = os.path.join(proj_dir, '.gitignore')
     # ignore safety mode for gitignore; if you already have it, then you have a git repo where you can undo changes
