@@ -262,6 +262,7 @@ class CppCheckerTest(TestCase):
             q_dir = hwsuite.question._main_raw(proj_dir, 'q1', excludes='question,testcases')
             cpp_file = os.path.join(q_dir, 'main.cpp')
             hwsuite.tests.write_text_file("""\
+            // this is a program that leaks memory; it is used to confirm that valgrind memcheck works
             #include <iostream>
             int main() {
                 int* a = new int[3];
