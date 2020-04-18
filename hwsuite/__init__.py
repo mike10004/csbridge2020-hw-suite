@@ -6,7 +6,8 @@ import logging
 import os
 import os.path
 import subprocess
-from typing import Tuple
+from subprocess import PIPE
+from typing import Tuple, Sequence
 
 _log = logging.getLogger(__name__)
 CFG_FILENAME = ".hwconfig.json"
@@ -114,3 +115,22 @@ def describe_path(pathname, cwd=None, decorate=False):
         return relpath
     else:
         return abspath
+
+
+class GitException(Exception):
+    pass
+
+
+class GitRunner(object):
+
+    def __init__(self):
+        self.executable = 'git'
+
+    def run(self, args: Sequence[str]):
+        cmd = [self.executable] + list(args)
+        proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE)
+        if proc.returncode != 0:
+            _log.error("exit %s from git: %s", proc.returncode, proc.stderr.decode('utf8'))
+            raise GitException(f"exit {proc.returncode} from git")
+        return proc.stdout.decode('utf8')
+

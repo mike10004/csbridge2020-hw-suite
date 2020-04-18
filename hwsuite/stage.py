@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import glob
 from argparse import ArgumentParser
 import os
@@ -12,8 +11,7 @@ import shutil
 from typing import List, Optional, Sequence
 import re
 import hwsuite
-import subprocess
-from subprocess import PIPE
+from hwsuite import GitRunner
 
 
 _log = logging.getLogger(__name__)
@@ -106,23 +104,6 @@ def _has_unsafe_chars(s: str) -> bool:
             return True
     return False
 
-
-class GitException(Exception):
-    pass
-
-
-class GitRunner(object):
-
-    def __init__(self):
-        self.executable = 'git'
-
-    def run(self, args: Sequence[str]):
-        cmd = [self.executable] + list(args)
-        proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE)
-        if proc.returncode != 0:
-            _log.error("exit %s from git: %s", proc.returncode, proc.stderr.decode('utf8'))
-            raise GitException(f"exit {proc.returncode} from git")
-        return proc.stdout.decode('utf8')
 
 class Stager(object):
 
