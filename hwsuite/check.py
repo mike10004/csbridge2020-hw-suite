@@ -302,7 +302,7 @@ class StuffConfig(NamedTuple):
 # noinspection PyMethodMayBeStatic
 class ScreenRunnable(object):
 
-    def __init__(self, procdef):
+    def __init__(self, procdef: ProcessDefinition):
         self.procdef = procdef
         self.case_id = str(uuid.uuid4())
         self.started_proc: Optional[subprocess.Popen] = None
@@ -746,6 +746,7 @@ class TestCasesConfig(NamedTuple):
 
     max_test_cases: int
     filter_pattern: Optional[str]
+    timeout: Optional[float]
 
     def matches(self, test_case: TestCase):
         if self.filter_pattern is None:
@@ -802,7 +803,10 @@ class CppChecker(object):
             t.start()
             threads.append(t)
         for t in threads:
-            t.join()
+            t.join(test_cases_cfg.timeout)
+            if t.is_alive():
+                _log.warning("test case running in thread %s exceeded timeout", t)
+                t.join()
         if not threads:
             _log.warning("all test cases were skipped")
         assert len(threads) == len(outcomes), "not all threads returned an outcome: {} threads but {} outcomes".format(len(threads), len(outcomes))
@@ -849,7 +853,7 @@ def _main(args: argparse.Namespace):
     await_config = PollConfig.from_args_await(args)
     throttle = Throttle(args.pause, await_config, _DEFAULT_PROCESSING_TIMEOUT_SECONDS)
     stuff_config = StuffConfig.from_args(args)
-    test_cases_config = TestCasesConfig(args.max_cases, args.filter)
+    test_cases_config = TestCasesConfig(args.max_cases, args.filter, args.timeout)
     valgrind_config = ValgrindConfig.from_options(args)
     runner_factory = TestCaseRunnerFactory(throttle, stuff_config, args.require_screen, valgrind_config)
     for i, cpp_file in enumerate(sorted(main_cpps)):
@@ -876,6 +880,7 @@ def main():
     parser.add_argument("-m", "--max-cases", type=int, default=None, metavar="N", help="run at most N test cases per cpp")
     parser.add_argument("-j", "-t", "--threads", type=int, metavar="N", help="concurrency level for test cases; default is cpu count")
     parser.add_argument("--log-input", help="log feeding of input lines at DEBUG level")
+    parser.add_argument("--timeout", type=float, help="per-test-case timeout (in seconds)")
     parser.add_argument("--filter", metavar="PATTERN", help="match test case input filenames against PATTERN")
     parser.add_argument("--report", metavar="ACTION", choices=_REPORT_CHOICES, default='diff', help=f"what to print on test case failure; one of {_REPORT_CHOICES}; default is 'diff'")
     parser.add_argument("--stuff", metavar="MODE", choices=_STUFF_MODES, default='auto', help="how to interpret input lines sent to process via `screen -X stuff`: 'auto' or 'strict'")
