@@ -8,7 +8,7 @@ import sys
 import fnmatch
 import logging
 import shutil
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Dict
 import re
 import hwsuite
 from hwsuite import GitRunner
@@ -16,6 +16,7 @@ from hwsuite import GitRunner
 
 _log = logging.getLogger(__name__)
 _SAFE_FILENAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+ERR_NO_STAGABLES = 2
 
 class PrefixNotDefinedException(hwsuite.MessageworthyException):
     pass
@@ -104,6 +105,9 @@ def _has_unsafe_chars(s: str) -> bool:
             return True
     return False
 
+class StageNameViolationException(hwsuite.MessageworthyException):
+    pass
+
 
 class Stager(object):
 
@@ -122,35 +126,32 @@ class Stager(object):
         return subdirs
 
     # noinspection PyMethodMayBeStatic
-    def find_cpp_files(self, subdirs: List[str]):
-        _log.debug("drawing cpp files from %s", subdirs)
-        cpp_files_for_staging = []
+    def find_code_files(self, subdirs: List[str], patterns=('*.h', '*.cpp', '*.cc', '*.hpp')) -> List[str]:
+        _log.debug("drawing .h and .cpp files from %s", subdirs)
+        code_files = []
         for subdir in subdirs:
             if os.path.exists(os.path.join(subdir, '.nostage')):
                 _log.debug("skipping %s because .nostage was found", subdir)
                 continue
-            main_cpp = os.path.join(subdir, 'main.cpp')
-            if not os.path.exists(main_cpp):
-                cpp_files = glob.glob(os.path.join(subdir, '*.cpp'))
-                _log.debug("%d .cpp files found in %s", len(cpp_files), subdir)
-                if not cpp_files:
-                    continue
-                if len(cpp_files) > 1:
-                    _log.warning("skipping %s because multiple cpp files found", subdir)
-                    continue
-                main_cpp = cpp_files[0]
-            cpp_files_for_staging.append(main_cpp)
-        return cpp_files_for_staging
+            for pattern in patterns:
+                files = glob.glob(os.path.join(subdir, pattern))
+                _log.debug("%d files matching %s found in %s", len(files), pattern, subdir)
+                code_files += files
+        return code_files
 
     # noinspection PyMethodMayBeStatic
-    def map_to_destination(self, cpp_files_for_staging: Sequence[str], stage_dir: str, prefix: str):
+    def map_to_destination(self, cpp_files_for_staging: Sequence[str], stage_dir: str, prefix: str) -> Dict[str, str]:
         dest_mapping = {}
         for cpp_file in cpp_files_for_staging:
-            dest_pathname = os.path.join(stage_dir, prefix + os.path.basename(os.path.dirname(cpp_file)) + '.cpp')
-            if dest_pathname in dest_mapping.values():
-                _log.warning("name conflict: multiple sources map to %s", dest_pathname)
-                return 0
+            basename = os.path.basename(cpp_file)
+            if basename.lower() == 'main.cpp':
+                dest_pathname = os.path.join(stage_dir, prefix + os.path.basename(os.path.dirname(cpp_file)) + '.cpp')
+            else:
+                dest_pathname = os.path.join(stage_dir, basename)
             dest_mapping[cpp_file] = dest_pathname
+        dest_mapping_values = dest_mapping.values()
+        if len(set(dest_mapping_values)) != len(dest_mapping_values):
+            raise StageNameViolationException("name conflict in mapped destinations: %s", dest_mapping_values)
         return dest_mapping
 
     def stage(self, prefix: str, stage_dir: Optional[str]=None, subdirs: Optional[List[str]]=None) -> int:
@@ -160,14 +161,14 @@ class Stager(object):
                 raise ValueError("prefix must contain non-whitespace")
         if not subdirs:
             subdirs = self.detect_subdirs()
-        cpp_files_for_staging = self.find_cpp_files(subdirs)
-        if not cpp_files_for_staging:
+        files_for_staging = self.find_code_files(subdirs)
+        if not files_for_staging:
             _log.warning("zero .cpp files found to stage")
-            return 0
+            return ERR_NO_STAGABLES
         stage_dir = os.path.abspath(stage_dir or os.path.join(self.proj_root, self.default_stage_dir_basename))
         if not self.no_clean and os.path.isdir(stage_dir):
             clean(stage_dir)
-        dest_mapping = self.map_to_destination(cpp_files_for_staging, stage_dir, prefix)
+        dest_mapping = self.map_to_destination(files_for_staging, stage_dir, prefix)
         for src_file, dst_file in dest_mapping.items():
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
             try:

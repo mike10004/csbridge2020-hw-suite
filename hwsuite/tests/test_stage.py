@@ -3,11 +3,12 @@ import glob
 import os
 import sys
 import tempfile
-from typing import List
+from typing import List, Collection, Set
 from unittest import TestCase
 from pathlib import Path
 from hwsuite import stage
 from hwsuite.stage import Stager, GitRunner
+from random import random
 import logging
 import hwsuite.tests
 from hwsuite.tests import touch_all
@@ -25,6 +26,26 @@ class FakeGitRunner(object):
 
 class StagerTest(TestCase):
 
+    def test_map_to_destination(self):
+        s = Stager('/home/somewhere/proj1')
+        files = [
+            '/home/somewhere/proj1/q1/main.cpp',
+            '/home/somewhere/proj1/q2/main.cpp',
+            '/home/somewhere/proj1/q2/library1.h',
+            '/home/somewhere/proj1/q2/library2.h',
+            '/home/somewhere/proj1/q2/library2.cpp',
+            '/home/somewhere/proj1/q3/main.cpp',
+        ]
+        mapped = s.map_to_destination(files, '/path/to/stage', 'foo123_')
+        self.assertDictEqual({
+            '/home/somewhere/proj1/q1/main.cpp': '/path/to/stage/foo123_q1.cpp',
+            '/home/somewhere/proj1/q2/main.cpp': '/path/to/stage/foo123_q2.cpp',
+            '/home/somewhere/proj1/q2/library1.h': '/path/to/stage/library1.h',
+            '/home/somewhere/proj1/q2/library2.h': '/path/to/stage/library2.h',
+            '/home/somewhere/proj1/q2/library2.cpp': '/path/to/stage/library2.cpp',
+            '/home/somewhere/proj1/q3/main.cpp': '/path/to/stage/foo123_q3.cpp',
+        }, mapped)
+
     def test_stage_normal(self):
         fs_structure = """\
 q1/main.cpp
@@ -34,6 +55,9 @@ q2/main.cpp
 q2/test-cases/input.txt
 q2/test-cases/expected.txt
 q3/question.md
+q4/main.cpp
+q4/.nostage
+q4/question.md
 """
         with tempfile.TemporaryDirectory() as tempdir:
             Path(os.path.join(tempdir, '.hwconfig.json')).touch()
@@ -46,14 +70,48 @@ q3/question.md
                 os.path.join(tempdir, 'stage', prefix + 'q1.cpp'),
                 os.path.join(tempdir, 'stage', prefix + 'q2.cpp'),
             }
-            stage_contents = glob.glob(os.path.join(tempdir, 'stage', '*'))
-            founds = set()
-            for expected in expecteds:
-                if not os.path.isfile(expected):
-                    print(f"{expected} not found among {stage_contents}", file=sys.stderr)
-                else:
-                    founds.add(expected)
-            self.assertSetEqual(expecteds, founds)
+            self._check_dir(tempdir, expecteds)
+
+    def test_stage_manyfilesperdir(self):
+        fs_structure = """\
+q1/main.cpp
+q1/question.md
+q1/test-cases.json
+q2/main.cpp
+q2/library1.h
+q2/library2.h
+q2/library2.cpp
+q2/test-cases/input.txt
+q2/test-cases/expected.txt
+some_tests/foo_test.cpp
+test_q2/bar_test.cpp
+q3/question.md
+"""
+        with tempfile.TemporaryDirectory() as tempdir:
+            Path(os.path.join(tempdir, '.hwconfig.json')).touch()
+            touch_all(tempdir, fs_structure.split())
+            prefix = 'abc123_hw_'
+            stager = Stager(tempdir)
+            nstaged = stager.stage(prefix)
+            self.assertEqual(5, nstaged)
+            expecteds = {
+                os.path.join(tempdir, 'stage', prefix + 'q1.cpp'),
+                os.path.join(tempdir, 'stage', prefix + 'q2.cpp'),
+                os.path.join(tempdir, 'stage', 'library1.h'),
+                os.path.join(tempdir, 'stage', 'library2.h'),
+                os.path.join(tempdir, 'stage', 'library2.cpp'),
+            }
+            self._check_dir(tempdir, expecteds)
+
+    def _check_dir(self, proj_root: str, expecteds: Set[str]):
+        stage_contents = glob.glob(os.path.join(proj_root, 'stage', '*'))
+        founds = set()
+        for expected in expecteds:
+            if not os.path.isfile(expected):
+                print(f"{expected} not found among {stage_contents}", file=sys.stderr)
+            else:
+                founds.add(expected)
+        self.assertSetEqual(expecteds, founds)
 
 
 class GitRunnerTest(TestCase):
