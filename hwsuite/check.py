@@ -744,7 +744,7 @@ def report(outcomes: List[TestCaseOutcome], report_type: str, ofile=sys.stderr):
 
 class TestCasesConfig(NamedTuple):
 
-    max_test_cases: int
+    max_test_cases: Optional[int]
     filter_pattern: Optional[str]
     timeout: Optional[float]
 
@@ -758,6 +758,10 @@ class TestCasesConfig(NamedTuple):
             return False
         identifier = _derive_counterparts(test_case.expected_file).identifier
         return fnmatch.fnmatch(identifier, self.filter_pattern)
+
+    @staticmethod
+    def create(max_test_cases=None, filter_pattern=None, timeout=None):
+        return TestCasesConfig(max_test_cases, filter_pattern, timeout)
 
 
 class CppChecker(object):

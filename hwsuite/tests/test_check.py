@@ -281,7 +281,7 @@ class CppCheckerTest(TestCase):
             valgrind_config = ValgrindConfig.from_options(args)
             runner_factory = TestCaseRunnerFactory(Throttle.default(), StuffConfig.default(), valgrind_config=valgrind_config)
             checker = CppChecker(runner_factory, 1)
-            outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig(1, None))
+            outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig.create(1))
             self.assertIsNotNone(outcomes)
             self.assertIsInstance(outcomes, dict)
             self.assertEqual(1, len(outcomes))
@@ -329,7 +329,7 @@ class CppCheckerTest(TestCase):
 
             runner_factory = CustomTestCaseRunnerFactory(Throttle.default(), StuffConfig.default())
             checker = CppChecker(runner_factory, 1)
-            outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig(1, None))
+            outcomes: Dict[TestCase, TestCaseOutcome] = checker.check_cpp(cpp_file, TestCasesConfig.create(1))
             self.assertEqual(1, len(screen_runnables))
             screen_runnable = screen_runnables[0]
             self.assertEqual(2, screen_runnable.num_stuffs, "num stuffs by ScreenRunnable")
