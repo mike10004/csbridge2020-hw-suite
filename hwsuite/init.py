@@ -15,6 +15,10 @@ _log = logging.getLogger(__name__)
 _ROOT_CMAKELISTS_TXT_TEMPLATE = """\
 cmake_minimum_required(VERSION 3.7)
 project({project_name})
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic -Werror -Wall")
+
 """
 
 _GITIGNORE_TEXT = """\
